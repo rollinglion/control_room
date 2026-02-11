@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Control Room</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <div id="control-panel">
+    <div class="cp-header">
+      <span class="cp-title">CONTROL ROOM</span>
+      <button id="cp-toggle" title="Collapse panel">&minus;</button>
+    </div>
+
+    <div class="cp-body" id="cp-body">
+      <!-- Tabs -->
+      <div class="cp-tabs">
+        <button class="cp-tab active" data-tab="search" title="Search and plot companies on map">🏢 Companies</button>
+        <button class="cp-tab" data-tab="people" title="Search for people and PSC data">👥 People</button>
+        <button class="cp-tab" data-tab="entities" title="Add custom entities to map">📍 Entities</button>
+        <button class="cp-tab" data-tab="layers" title="Toggle map layers and base map">🗺️ Layers</button>
+      </div>
+
+      <!-- ═══ Company Search Tab ═══ -->
+      <div class="cp-tab-pane active" id="tab-search">
+        <div id="data-progress" class="cp-progress done">
+          <div class="cp-progress-label">
+            <span id="progress-text">Searching...</span>
+            <span id="progress-pct">0 %</span>
+          </div>
+          <div class="cp-progress-track">
+            <div class="cp-progress-fill" id="progress-fill"></div>
+          </div>
+        </div>
+
+        <label for="ch_name">Company Name</label>
+        <input id="ch_name" type="text" placeholder="e.g. Bristol City" />
+
+        <label for="ch_number">Company Number</label>
+        <input id="ch_number" type="text" placeholder="e.g. 03230871" />
+
+        <label for="ch_postcode">Postcode (filter)</label>
+        <input id="ch_postcode" type="text" placeholder="e.g. BS3 2EJ" />
+
+        <label for="ch_town">Post Town (filter)</label>
+        <input id="ch_town" type="text" placeholder="e.g. Bristol" />
+
+        <label for="ch_status">Company Status</label>
+        <select id="ch_status">
+          <option value="">All Statuses</option>
+          <option value="active">Active</option>
+          <option value="dissolved">Dissolved</option>
+          <option value="liquidation">In Liquidation</option>
+          <option value="administration">In Administration</option>
+        </select>
+
+        <label for="ch_sic">SIC Code (filter)</label>
+        <select id="ch_sic">
+          <option value="">All SIC Codes</option>
+          <option value="93120">93120 - Activities of sport clubs</option>
+          <option value="93110">93110 - Operation of sports facilities</option>
+          <option value="64191">64191 - Banks</option>
+          <option value="64192">64192 - Building societies</option>
+          <option value="64209">64209 - Other financial service activities</option>
+          <option value="64303">64303 - Activities of investment trusts</option>
+          <option value="68100">68100 - Buying and selling of own real estate</option>
+          <option value="68209">68209 - Other letting and operating of own/leased real estate</option>
+          <option value="70100">70100 - Activities of head offices</option>
+          <option value="64110">64110 - Central banking</option>
+          <option value="86101">86101 - Hospital activities</option>
+          <option value="86210">86210 - General medical practice activities</option>
+          <option value="47110">47110 - Retail sale in non-specialised stores</option>
+          <option value="56101">56101 - Licensed restaurants</option>
+          <option value="56103">56103 - Take-away food shops and mobile food stands</option>
+          <option value="56210">56210 - Event catering activities</option>
+          <option value="62012">62012 - Business and domestic software development</option>
+          <option value="62020">62020 - Information technology consultancy activities</option>
+          <option value="41100">41100 - Development of building projects</option>
+          <option value="41201">41201 - Construction of commercial buildings</option>
+        </select>
+
+        <div class="cp-btn-row">
+          <button id="ch_search" class="btn-primary">Search API</button>
+          <button id="ch_clear" class="btn-secondary">Clear</button>
+        </div>
+
+        <div id="ch_results"></div>
+
+        <!-- ═══ QUICK SEARCH (AUTOCOMPLETE) ═══ -->
+        <div class="api-search-divider">
+          <span>── OR QUICK SEARCH ──</span>
+        </div>
+
+        <label for="ch_api_search">Type-ahead Search</label>
+        <div class="autocomplete-wrapper">
+          <input id="ch_api_search" type="text" placeholder="Start typing company name..." />
+          <div id="ch_api_suggestions" class="suggestions-dropdown"></div>
+        </div>
+
+        <div id="ch_api_selected"></div>
+        <!-- ═══ END QUICK SEARCH ═══ -->
+
+      </div>
+
+      <!-- ═══ People (PSC) Tab ═══ -->
+      <div class="cp-tab-pane" id="tab-people">
+        <div id="psc-progress" class="cp-progress done">
+          <div class="cp-progress-label">
+            <span id="psc-progress-text">Searching...</span>
+            <span id="psc-progress-pct"></span>
+          </div>
+          <div class="cp-progress-track">
+            <div class="cp-progress-fill" id="psc-progress-fill"></div>
+          </div>
+        </div>
+
+        <label for="psc_name">Person / Officer Name</label>
+        <input id="psc_name" type="text" placeholder="e.g. John Smith" title="Search for officers by name (min 3 characters)" />
+
+        <label for="psc_company">Company Number (for PSC)</label>
+        <input id="psc_company" type="text" placeholder="e.g. 08209948" title="View PSC data for a specific company" />
+
+        <div class="cp-btn-row">
+          <button id="psc_search" class="btn-primary" title="Search for PSC or officers via API">🔍 Search API</button>
+          <button id="psc_clear" class="btn-secondary">Clear</button>
+        </div>
+
+        <div class="psc-help-text">
+          💡 Enter a person's name to search for officer appointments, or a company number to view PSC records with PDF download.
+        </div>
+
+        <div id="psc_results"></div>
+      </div>
+
+      <!-- ═══ Entities Tab ═══ -->
+      <div class="cp-tab-pane" id="tab-entities">
+        <div class="entity-help">
+          <strong>📍 Add Custom Entities to Map</strong>
+          <p><strong>To place:</strong> Click a category below → Click on map → Enter details (name, address, notes)</p>
+          <p><strong>To connect:</strong> Click 🔗 Connect on any entity → Click target entity → Enter label</p>
+          <p>Icons auto-suggest based on name (e.g., "HSBC" → HSBC icon)</p>
+        </div>
+        
+        <div id="entity_selector" class="entity-grid">
+          <!-- Populated by JavaScript -->
+        </div>
+        
+        <div class="entity-stats">
+          <div class="entity-stat-item">
+            <span class="entity-stat-label">Entities on map:</span>
+            <span id="entity_count" class="entity-stat-value">0</span>
+          </div>
+          <div class="entity-stat-item">
+            <span class="entity-stat-label">Connections:</span>
+            <span id="connection_count" class="entity-stat-value">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Layers Tab ═══ -->
+      <div class="cp-tab-pane" id="tab-layers">
+
+        <div class="layer-section-title">Base Map</div>
+        <div class="base-pills" id="base-pills">
+          <button class="bl-pill active" data-base="Dark">Dark</button>
+          <button class="bl-pill" data-base="Grey">Grey</button>
+          <button class="bl-pill" data-base="Street">Street</button>
+          <button class="bl-pill" data-base="Satellite">Satellite</button>
+        </div>
+
+        <div class="layer-section-title">Data Overlays</div>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="areas">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#818cf8"></span>
+          <span class="layer-name">Police Force Areas</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="airports_uk">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#38bdf8"></span>
+          <span class="layer-name">UK Airports</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="airports_global">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#0284c7"></span>
+          <span class="layer-name">Global Airports</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="seaports">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#2dd4bf"></span>
+          <span class="layer-name">Seaports</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="underground">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#f43f5e"></span>
+          <span class="layer-name">TfL Stations (Underground, DLR, Tram, Rail)</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="flights">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#f59e0b"></span>
+          <span class="layer-name">Live Flights (OpenSky)</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="bikes">
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#22c55e"></span>
+          <span class="layer-name">Santander Cycles</span>
+        </label>
+
+        <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="companies" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#a78bfa"></span>
+          <span class="layer-name">Companies (search)</span>
+        </label>
+
+        <!-- ═══ TfL Line Status ═══ -->
+        <div class="layer-section-title">TfL Line Status <span id="tfl-status-time" class="tfl-status-time"></span></div>
+        <div id="tfl-status-grid" class="tfl-status-grid">
+          <div class="tfl-status-loading">Loading line status...</div>
+        </div>
+
+        <!-- ═══ Flight Info ═══ -->
+        <div class="layer-section-title">Live Flights <span id="flight-info-time" class="tfl-status-time"></span></div>
+        <div id="flight-info" class="flight-info-panel">
+          <span class="flight-info-text">Enable layer to track aircraft</span>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar">
+    <span id="status-text">Initialising...</span>
+  </div>
+
+  <!-- Entity Placement Panel -->
+  <div id="entity-placement-panel" class="entity-panel">
+    <div class="entity-panel-header">
+      <span class="entity-panel-title">PLACE ENTITY</span>
+      <button id="entity-panel-close" class="entity-panel-close-btn">&times;</button>
+    </div>
+    <div class="entity-panel-body">
+      <form id="entity-placement-form">
+        <label for="entity-label">Name / Label</label>
+        <input type="text" id="entity-label" placeholder="e.g. John Smith" required />
+        
+        <label for="entity-category">Category</label>
+        <select id="entity-category" required>
+          <option value="">Select category...</option>
+        </select>
+        
+        <label for="entity-icon">Icon</label>
+        <select id="entity-icon" required>
+          <option value="">Select icon...</option>
+        </select>
+        
+        <label for="entity-address">Address <span style="opacity: 0.5; font-weight: 400;">(optional)</span></label>
+        <input type="text" id="entity-address" placeholder="e.g. 123 Main St, London" />
+        
+        <label for="entity-notes">Notes <span style="opacity: 0.5; font-weight: 400;">(optional)</span></label>
+        <textarea id="entity-notes" placeholder="Additional information..." rows="3"></textarea>
+        
+        <div class="entity-panel-coords">
+          <span class="popup-label">Coordinates</span>
+          <span id="entity-coords">--</span>
+        </div>
+        
+        <div class="cp-btn-row">
+          <button type="submit" class="btn-primary">PLACE ENTITY</button>
+          <button type="button" class="btn-secondary" id="entity-cancel-btn">CANCEL</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/icons.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/ch_api.js"></script>
+  <script src="js/psc_api.js"></script>
+  <script src="js/tfl_live.js"></script>
+  <script src="js/opensky.js"></script>
+</body>
+</html>
