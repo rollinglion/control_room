@@ -508,6 +508,10 @@ async function refreshNrBoard() {
     if (data?.board) {
       await upsertNrStationMarker(data.board);
       await plotNrServiceLines(data.board, data.board.services || []);
+      // Ensure route context is always visible even when feed lacks destination/origin fields.
+      if (!NR.routeLines.length) {
+        await plotApproxRailSpokes(NR.crs);
+      }
       if (data.board.locationName) {
         setStatus(`National Rail ${NR.boardType}: ${data.board.locationName} (${NR.crs})`);
       }

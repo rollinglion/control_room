@@ -12,12 +12,25 @@ const ROADS = {
   active: false
 };
 
+let roadsRouteLayer = null;
+
 function toDdmmyyyy(dateObj) {
   const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const yyyy = String(d.getFullYear());
   return `${dd}${mm}${yyyy}`;
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = (d) => (d * Math.PI) / 180;
+  const R = 6371;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
 }
 
 function getRoadDateInput() {
@@ -168,6 +181,56 @@ async function fetchSiteDailySummary(siteId, dateObj) {
 function clearRoadMarkers() {
   layers.roads.clearLayers();
   ROADS.markerById.clear();
+  roadsRouteLayer = null;
+}
+
+function roadCorridorKey(site) {
+  const raw = String(site?.Description || site?.Name || "").toUpperCase();
+  const m = raw.match(/\b([AM]\d{1,3}[A-Z]?)\b/);
+  if (m) return m[1];
+  const m2 = raw.match(/\b(A\d{1,4}|M\d{1,3})\b/);
+  return m2 ? m2[1] : "";
+}
+
+function buildRoadRouteOverlays(sites) {
+  if (!Array.isArray(sites) || !sites.length) return;
+  roadsRouteLayer = L.layerGroup().addTo(layers.roads);
+
+  const grouped = new Map();
+  for (const s of sites) {
+    const key = roadCorridorKey(s);
+    if (!key) continue;
+    const lat = Number(s?.Latitude);
+    const lon = Number(s?.Longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push({ site: s, lat, lon });
+  }
+
+  for (const [key, pts] of grouped.entries()) {
+    if (pts.length < 3) continue;
+    const sorted = pts.sort((a, b) => (a.lon - b.lon) || (a.lat - b.lat));
+    const latLngs = [];
+    for (let i = 0; i < sorted.length; i++) {
+      const cur = sorted[i];
+      if (!latLngs.length) {
+        latLngs.push([cur.lat, cur.lon]);
+        continue;
+      }
+      const prev = sorted[i - 1];
+      const gap = haversineKm(prev.lat, prev.lon, cur.lat, cur.lon);
+      if (gap <= 30) latLngs.push([cur.lat, cur.lon]);
+    }
+    if (latLngs.length < 2) continue;
+    const line = L.polyline(latLngs, {
+      color: "#f97316",
+      weight: 2.4,
+      opacity: 0.5,
+      dashArray: "5 5",
+      className: "roads-route-line"
+    }).addTo(roadsRouteLayer);
+    line.bindTooltip(`Road corridor ${key}`, { sticky: true, direction: "top", opacity: 0.9 });
+  }
 }
 
 function baseRoadPopup(site) {
@@ -201,6 +264,7 @@ async function plotRoadSites() {
   if (!map.hasLayer(layers.roads)) return;
   const items = getSitesForCurrentView();
   clearRoadMarkers();
+  buildRoadRouteOverlays(items);
   renderRoadResults(items);
 
   const dateObj = getSelectedRoadDate();
