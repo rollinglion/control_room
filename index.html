@@ -211,6 +211,15 @@
         </label>
 
         <label class="layer-row">
+          <input type="checkbox" class="layer-cb" data-layer="companies" checked>
+          <span class="toggle-track"><span class="toggle-thumb"></span></span>
+          <span class="layer-dot" style="background:#a78bfa"></span>
+          <span class="layer-name">Companies (search)</span>
+        </label>
+
+        <div class="layer-section-title">Live Data</div>
+
+        <label class="layer-row">
           <input type="checkbox" class="layer-cb" data-layer="flights">
           <span class="toggle-track"><span class="toggle-thumb"></span></span>
           <span class="layer-dot" style="background:#f59e0b"></span>
@@ -224,24 +233,9 @@
           <span class="layer-name">Santander Cycles</span>
         </label>
 
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="companies" checked>
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#a78bfa"></span>
-          <span class="layer-name">Companies (search)</span>
-        </label>
-
-        <!-- ═══ TfL Line Status ═══ -->
-        <div class="layer-section-title">TfL Line Status <span id="tfl-status-time" class="tfl-status-time"></span></div>
-        <div id="tfl-status-grid" class="tfl-status-grid">
-          <div class="tfl-status-loading">Loading line status...</div>
-        </div>
-
-        <!-- ═══ Flight Info ═══ -->
-        <div class="layer-section-title">Live Flights <span id="flight-info-time" class="tfl-status-time"></span></div>
-        <div id="flight-info" class="flight-info-panel">
-          <span class="flight-info-text">Enable layer to track aircraft</span>
-        </div>
+        <!-- TfL Line Status -->
+        <div class="layer-section-title">TfL Line Status</div>
+        <div id="tfl-status-grid"></div>
 
       </div>
     </div>
@@ -292,17 +286,40 @@
     </div>
   </div>
 
+  <!-- Flight Info Panel -->
+  <div id="flight-info" class="flight-info-panel" style="display:none;">
+    <div class="flight-info-header">
+      <span>LIVE FLIGHTS</span>
+      <button id="flight-refresh-btn" class="flight-refresh-btn" title="Refresh now">&#x21bb;</button>
+    </div>
+    <div id="flight-stats" class="flight-stats"></div>
+  </div>
+
   <div id="map"></div>
-  <script src="js/api_keys.js"></script>
-  <script src="js/ch_api.js"></script>
-  <script src="js/map.js"></script>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- API Keys (gitignored — copy api_keys.example.js to api_keys.js) -->
+  <script src="js/api_keys.js"></script>
+
+  <!-- Core Config -->
   <script src="js/config.js"></script>
-  <script src="js/icons.js"></script>
+
+  <!-- API Modules -->
+  <script src="js/ch_api.js"></script>
   <script src="js/psc_api.js"></script>
+
+  <!-- Icons -->
+  <script src="js/icons.js"></script>
+
+  <!-- Map -->
+  <script src="js/map.js"></script>
+
+  <!-- Live Data Layers -->
   <script src="js/tfl_live.js"></script>
   <script src="js/opensky.js"></script>
+
 </body>
 </html>

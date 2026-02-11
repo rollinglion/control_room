@@ -1,7 +1,8 @@
-# Environment variables (SECURITY: Never commit API keys)
+# Environment variables and API keys (SECURITY: Never commit)
 .env
 .env.local
 .env.*.local
+js/api_keys.js
 
 # Claude Code
 .claude/

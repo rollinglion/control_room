@@ -37,8 +37,11 @@ let CH_LAST_RESULTS = [];
 let CH_TOTAL_ROWS = 0;
 
 async function loadCompaniesHouseIndex() {
-  const r = await fetch("data/companies_house_index.json");
-  CH_INDEX = await r.json();
+  try {
+    const r = await fetch("data/companies_house_index.json");
+    if (!r.ok) { console.warn("No local company index — using API only"); return; }
+    CH_INDEX = await r.json();
+  } catch (e) { console.warn("Company index load failed:", e); }
 }
 
 function loadSubset(file) {
@@ -140,6 +143,34 @@ function loadPostcodeArea(area) {
   return PC_LOADING[area];
 }
 function lookupPostcode(pc) { const a = postcodeArea(pc); return a && PC_CACHE[a] ? PC_CACHE[a][pc] || null : null; }
+
+// Fallback geocoding via postcodes.io when local files unavailable
+async function geocodePostcode(rawPostcode) {
+  const pc = rawPostcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const area = postcodeArea(pc);
+  if (!area) return null;
+
+  // Try local first
+  await loadPostcodeArea(area);
+  const local = lookupPostcode(pc);
+  if (local) return local;
+
+  // Fallback to postcodes.io API (free, no key, CORS enabled)
+  try {
+    const formatted = rawPostcode.trim().replace(/\s+/g, "+");
+    const resp = await fetch(`https://api.postcodes.io/postcodes/${formatted}`);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.status === 200 && data.result) {
+      const coords = { lat: data.result.latitude, lon: data.result.longitude };
+      // Cache it locally so subsequent lookups are instant
+      if (!PC_CACHE[area]) PC_CACHE[area] = {};
+      PC_CACHE[area][pc] = coords;
+      return coords;
+    }
+  } catch (e) { console.warn("postcodes.io fallback failed:", e); }
+  return null;
+}
 async function ensurePostcodesForRows(rows) {
   const needed = new Set();
   for (const r of rows) {
@@ -365,7 +396,9 @@ const layers = {
   airports_uk:     L.featureGroup(),
   airports_global: L.featureGroup(),
   seaports:        L.featureGroup(),
-  underground:     L.featureGroup()
+  underground:     L.featureGroup(),
+  flights:         L.featureGroup(),
+  bikes:           L.featureGroup()
 };
 
 // Track connections and entity data
@@ -1573,12 +1606,8 @@ async function addCompanyToMap(companyNumber, companyName, personName = '', pers
       return;
     }
     
-    // Lookup coordinates
-    const pc = postcode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const area = postcodeArea(pc);
-    await loadPostcodeArea(area);
-    const coords = lookupPostcode(pc);
-    
+    // Lookup coordinates (local first, then postcodes.io fallback)
+    const coords = await geocodePostcode(postcode);
     if (!coords) {
       alert(`Could not geocode postcode: ${postcode}`);
       setStatus('Failed to add company');
@@ -1656,11 +1685,7 @@ async function addPersonToMap(officerName, address, companies = []) {
   
   try {
     const postcode = address.postal_code;
-    const pc = postcode.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const area = postcodeArea(pc);
-    await loadPostcodeArea(area);
-    const coords = lookupPostcode(pc);
-    
+    const coords = await geocodePostcode(postcode);
     if (!coords) {
       alert(`Could not geocode postcode: ${postcode}`);
       setStatus('Failed to add person');
@@ -1737,9 +1762,7 @@ async function searchCompaniesViaAPI(criteria, limit = 100) {
   }
   
   try {
-    // Call Companies House API via proxy
-    const url = `/ch/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`;
-    const response = await fetch(url);
+    const response = await fetchCH(`/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`);
     
     if (!response.ok) {
       console.error("API search failed:", response.status);

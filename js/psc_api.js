@@ -23,11 +23,8 @@ async function getPSCForCompanyAPI(companyNumber) {
   }
   
   try {
-  const response = await fetchCH(
-    `/company/${encodeURIComponent(companyNumber)}/persons-with-significant-control`
-  );
+    const response = await fetchCH(`/company/${encodeURIComponent(companyNumber)}/persons-with-significant-control`);
 
-    
     if (!response.ok) {
       if (response.status === 404) {
         console.log(`No PSC data for company ${companyNumber}`);
@@ -78,9 +75,7 @@ async function searchCompaniesByOfficerAPI(officerName, limit = 50) {
   if (!officerName || officerName.trim().length < 3) return [];
   
   try {
-    // Use advanced search endpoint
-    const url = `/ch/search/officers?q=${encodeURIComponent(officerName)}&items_per_page=${limit}`;
-    const response = await fetch(url);
+    const response = await fetchCH(`/search/officers?q=${encodeURIComponent(officerName)}&items_per_page=${limit}`);
     
     if (!response.ok) {
       console.error("Officer search failed:", response.status);
@@ -107,8 +102,7 @@ async function getOfficerAppointmentsAPI(officerId) {
   }
   
   try {
-    const url = `/ch/officers/${encodeURIComponent(officerId)}/appointments`;
-    const response = await fetch(url);
+    const response = await fetchCH(`/officers/${encodeURIComponent(officerId)}/appointments`);
     
     if (!response.ok) {
       console.error("Appointments API failed:", response.status);
@@ -131,8 +125,7 @@ async function getFilingHistoryAPI(companyNumber, limit = 100) {
   if (!companyNumber) return [];
   
   try {
-    const url = `/ch/company/${encodeURIComponent(companyNumber)}/filing-history?items_per_page=${limit}`;
-    const response = await fetch(url);
+    const response = await fetchCH(`/company/${encodeURIComponent(companyNumber)}/filing-history?items_per_page=${limit}`);
     
     if (!response.ok) {
       if (response.status === 404) {

@@ -274,23 +274,10 @@ async function plotCompanyFromAPI(profile) {
     return;
   }
 
-  // Extract postcode and convert to format for lookup
   const rawPostcode = address.postal_code;
-  const postcode = rawPostcode.toUpperCase().replace(/[^A-Z0-9]/g, "");
-  
-  // Use existing postcode lookup infrastructure
-  const area = postcodeArea(postcode);
-  if (!area) {
-    setStatus(`Invalid postcode format: ${rawPostcode}`);
-    return;
-  }
-
-  // Load postcode area if needed
-  await loadPostcodeArea(area);
-  
-  const coords = lookupPostcode(postcode);
+  const coords = await geocodePostcode(rawPostcode);
   if (!coords) {
-    setStatus(`Postcode not found in database: ${rawPostcode}`);
+    setStatus(`Postcode not found: ${rawPostcode}`);
     return;
   }
 
