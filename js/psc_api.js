@@ -23,8 +23,10 @@ async function getPSCForCompanyAPI(companyNumber) {
   }
   
   try {
-    const url = `/ch/company/${encodeURIComponent(companyNumber)}/persons-with-significant-control`;
-    const response = await fetch(url);
+  const response = await fetchCH(
+    `/company/${encodeURIComponent(companyNumber)}/persons-with-significant-control`
+  );
+
     
     if (!response.ok) {
       if (response.status === 404) {

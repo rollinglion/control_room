@@ -365,9 +365,7 @@ const layers = {
   airports_uk:     L.featureGroup(),
   airports_global: L.featureGroup(),
   seaports:        L.featureGroup(),
-  underground:     L.featureGroup(),
-  flights:         L.featureGroup(),
-  bikes:           L.featureGroup()
+  underground:     L.featureGroup()
 };
 
 // Track connections and entity data
@@ -1234,29 +1232,12 @@ fetch("data/underground_map/underground-live-map-master/bin/lines_for_stations.j
       else if (fullName.includes("Tram")) networkType = "Tram";
       
       // Use line-specific roundel icon
-      const stnMarker = L.marker([lat, lon], {
+      L.marker([lat, lon], {
         icon: getTfLRoundelIcon(lines)
-      });
-
-      // Base popup content
-      const baseContent =
-        `<strong>${stationName}</strong>` +
-        `<span class="popup-label">Lines</span> ${networkType}`;
-
-      stnMarker.bindPopup(
-        baseContent + '<div class="tfl-arrivals"><div class="tfl-arrivals-loading">Click for live arrivals...</div></div>'
-      );
-
-      // On popup open, fetch live arrivals from TfL API
-      stnMarker.on("popupopen", async function () {
-        if (typeof buildTflStationPopup !== "function") return;
-        const popupObj = await buildTflStationPopup(stationName, networkType);
-        stnMarker.setPopupContent(popupObj.loadingHtml);
-        const fullHtml = await popupObj.fetchFull();
-        stnMarker.setPopupContent(fullHtml);
-      });
-
-      stnMarker.addTo(layers.underground);
+      }).bindPopup(
+        `<strong>${stationName}</strong><br>` +
+        `<span class="popup-label">Lines</span> ${networkType}`
+      ).addTo(layers.underground);
     }
     console.log(`✓ TfL stations loaded with line-specific roundel icons`);
   })
@@ -1755,75 +1736,63 @@ async function searchCompaniesViaAPI(criteria, limit = 100) {
     return [];
   }
   
-try {
-    // Build endpoint
-    const endpoint = `/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`;
-
-    // Encode API key for Basic Auth
-    const auth = btoa(window.CH_API_KEY + ":");
-
-    const response = await fetch(
-        "https://api.company-information.service.gov.uk" + endpoint,
-        {
-            headers: {
-                "Authorization": "Basic " + auth,
-                "Accept": "application/json"
-            }
-        }
-    );
-
+  try {
+    // Call Companies House API via proxy
+    const url = `/ch/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`;
+    const response = await fetch(url);
+    
     if (!response.ok) {
-        console.error("API search failed:", response.status);
-        return [];
+      console.error("API search failed:", response.status);
+      return [];
     }
-
+    
     const data = await response.json();
     let items = data.items || [];
-
+    
     // Transform API results to match local format
     let results = items.map(item => ({
-        CompanyName: item.title || item.company_name || "",
-        CompanyNumber: item.company_number || "",
-        "RegAddress.PostCode": item.address?.postal_code || "",
-        "RegAddress.PostTown": item.address?.locality || "",
-        "RegAddress.AddressLine1": item.address?.address_line_1 || "",
-        CompanyStatus: item.company_status || "",
-        "SICCode.SicText_1": item.sic_codes ? item.sic_codes.join(", ") : "",
-        _rawSicCodes: item.sic_codes || []
+      CompanyName: item.title || item.company_name || "",
+      CompanyNumber: item.company_number || "",
+      "RegAddress.PostCode": item.address?.postal_code || "",
+      "RegAddress.PostTown": item.address?.locality || "",
+      "RegAddress.AddressLine1": item.address?.address_line_1 || "",
+      CompanyStatus: item.company_status || "",
+      "SICCode.SicText_1": item.sic_codes ? item.sic_codes.join(", ") : "",
+      _rawSicCodes: item.sic_codes || []
     }));
-
-    // Apply local filters
+    
+    // Apply local filters (postcode, town) if specified
     if (postcodeFilter) {
-        results = results.filter(r =>
-            r["RegAddress.PostCode"].toLowerCase().includes(postcodeFilter)
-        );
+      results = results.filter(r => 
+        r["RegAddress.PostCode"].toLowerCase().includes(postcodeFilter)
+      );
     }
-
+    
     if (townFilter) {
-        results = results.filter(r =>
-            r["RegAddress.PostTown"].toLowerCase().includes(townFilter)
-        );
+      results = results.filter(r => 
+        r["RegAddress.PostTown"].toLowerCase().includes(townFilter)
+      );
     }
-
+    
+    // Filter by company status
     if (statusFilter) {
-        results = results.filter(r =>
-            r.CompanyStatus.toLowerCase().includes(statusFilter)
-        );
+      results = results.filter(r => 
+        r.CompanyStatus.toLowerCase().includes(statusFilter)
+      );
     }
-
+    
+    // Filter by SIC code
     if (sicFilter) {
-        results = results.filter(r =>
-            r._rawSicCodes.some(sic => sic.includes(sicFilter))
-        );
+      results = results.filter(r => 
+        r._rawSicCodes.some(sic => sic.includes(sicFilter))
+      );
     }
-
+    
     return results;
-
-} catch (err) {
+  } catch (err) {
     console.error("API search error:", err);
     return [];
-}
-
+  }
 }
 
 // ── Clear ──
