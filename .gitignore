@@ -71,3 +71,5 @@ __pycache__/
 Thumbs.db
 
 gfx/gta-v-map-leaflet-main/mapStyles.rar
+gfx/gta-v-map-leaflet-main/
+_geojson/
