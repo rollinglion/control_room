@@ -52,6 +52,12 @@ const CONTROL_ROOM_CONFIG = {
     bbox: { lamin: 49.5, lamax: 59.0, lomin: -8.0, lomax: 2.0 }  // UK
   },
 
+  // Companies House API (direct browser calls with Basic Auth)
+  companiesHouse: {
+    baseUrl: "https://api.company-information.service.gov.uk",
+    apiKey: window.CH_API_KEY || ""  // Set in js/api_keys.js (gitignored)
+  },
+
   // TfL API
   tfl: {
     baseUrl: "https://api.tfl.gov.uk",

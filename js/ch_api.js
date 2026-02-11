@@ -1,11 +1,27 @@
 // ================== ch_api.js ==================
 // Companies House Live API Integration (ADDITIVE MODULE)
-// Never calls CH API directly - always through local proxy at /ch/*
+// Calls CH API directly with Basic Auth (API key from js/api_keys.js)
+
+// ── Shared fetch helper for Companies House API ──
+
+function fetchCH(path) {
+  const cfg = CONTROL_ROOM_CONFIG.companiesHouse;
+  if (!cfg.apiKey) {
+    console.error("CH API key not set. Copy js/api_keys.example.js to js/api_keys.js and add your key.");
+    return Promise.reject(new Error("CH_API_KEY not configured"));
+  }
+  const url = cfg.baseUrl + path;
+  return fetch(url, {
+    headers: {
+      "Authorization": "Basic " + btoa(cfg.apiKey + ":"),
+      "Accept": "application/json"
+    }
+  });
+}
 
 // ── API Client ──
 
 const CH_API = {
-  baseUrl: "/ch",  // Local proxy endpoint
   cache: {
     search: new Map(),    // query -> {data, timestamp}
     company: new Map()    // company_number -> {data, timestamp}
@@ -16,21 +32,20 @@ const CH_API = {
   }
 };
 
-// Search companies via proxy
+// Search companies via API
 async function searchCompaniesAPI(query, limit = 20) {
   if (!query || query.trim().length < 2) return [];
 
   const cacheKey = `${query.trim().toLowerCase()}_${limit}`;
   const cached = CH_API.cache.search.get(cacheKey);
-  
+
   if (cached && (Date.now() - cached.timestamp < CH_API.cacheTTL.search)) {
     return cached.data;
   }
 
   try {
-    const url = `${CH_API.baseUrl}/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`;
-    const response = await fetch(url);
-    
+    const response = await fetchCH(`/search/companies?q=${encodeURIComponent(query)}&items_per_page=${limit}`);
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       console.error("CH API search failed:", response.status, error);
@@ -39,14 +54,12 @@ async function searchCompaniesAPI(query, limit = 20) {
 
     const data = await response.json();
     const items = data.items || [];
-    
-    // Cache the results
+
     CH_API.cache.search.set(cacheKey, {
       data: items,
       timestamp: Date.now()
     });
 
-    // Clean old cache entries (simple LRU)
     if (CH_API.cache.search.size > 50) {
       const firstKey = CH_API.cache.search.keys().next().value;
       CH_API.cache.search.delete(firstKey);
@@ -59,21 +72,20 @@ async function searchCompaniesAPI(query, limit = 20) {
   }
 }
 
-// Get company profile via proxy
+// Get company profile via API
 async function getCompanyProfile(companyNumber) {
   if (!companyNumber) return null;
 
   const cacheKey = companyNumber.trim().toUpperCase();
   const cached = CH_API.cache.company.get(cacheKey);
-  
+
   if (cached && (Date.now() - cached.timestamp < CH_API.cacheTTL.company)) {
     return cached.data;
   }
 
   try {
-    const url = `${CH_API.baseUrl}/company/${encodeURIComponent(companyNumber)}`;
-    const response = await fetch(url);
-    
+    const response = await fetchCH(`/company/${encodeURIComponent(companyNumber)}`);
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       console.error("CH API company fetch failed:", response.status, error);
@@ -81,14 +93,12 @@ async function getCompanyProfile(companyNumber) {
     }
 
     const data = await response.json();
-    
-    // Cache the result
+
     CH_API.cache.company.set(cacheKey, {
       data: data,
       timestamp: Date.now()
     });
 
-    // Clean old cache entries (simple LRU)
     if (CH_API.cache.company.size > 100) {
       const firstKey = CH_API.cache.company.keys().next().value;
       CH_API.cache.company.delete(firstKey);
