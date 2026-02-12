@@ -27,6 +27,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -120,28 +121,32 @@ def compact_columns(gdf, columns: list[str]):
 
 
 def write_geojson(gdf, path: Path) -> Dict[str, int]:
+    path = promote_temp_output_path(path)
+    tmp_path = path.with_name(f".{path.stem}.tmp_{int(time.time())}{path.suffix}")
     if gdf.empty:
         payload = {"type": "FeatureCollection", "features": []}
-        path.write_text(json.dumps(payload), encoding="utf-8")
+        tmp_path.write_text(json.dumps(payload), encoding="utf-8")
     else:
-        gdf.to_file(path, driver="GeoJSON")
+        gdf.to_file(tmp_path, driver="GeoJSON")
+    path = finalize_output_path(tmp_path, path)
     return {
         "features": int(len(gdf)),
         "bytes": int(path.stat().st_size),
+        "path": str(path),
     }
 
 
 def run_ogr_extract(src_pbf: Path, out_path: Path, layer: str, where: str, select: str) -> Dict[str, int]:
     ogr2ogr = resolve_ogr2ogr()
     ogr_env = build_ogr_env(ogr2ogr)
-    if out_path.exists():
-        out_path.unlink()
+    out_path = promote_temp_output_path(out_path)
+    tmp_path = out_path.with_name(f".{out_path.stem}.tmp_{int(time.time())}{out_path.suffix}")
     cmd = [
         ogr2ogr,
         "-overwrite",
         "-f",
         "GeoJSON",
-        str(out_path),
+        str(tmp_path),
         str(src_pbf),
         layer,
         "-t_srs",
@@ -154,10 +159,43 @@ def run_ogr_extract(src_pbf: Path, out_path: Path, layer: str, where: str, selec
         where,
     ]
     subprocess.run(cmd, check=True, env=ogr_env)
+    out_path = finalize_output_path(tmp_path, out_path)
     return {
         "features": -1,  # unknown without loading JSON; kept lightweight
         "bytes": int(out_path.stat().st_size),
+        "path": str(out_path),
     }
+
+
+def promote_temp_output_path(path: Path) -> Path:
+    """
+    Return a writable output path on Windows even when the canonical file is locked.
+    """
+    if not path.exists():
+        return path
+    try:
+        # Probe write access without truncating.
+        with path.open("ab"):
+            pass
+        return path
+    except PermissionError:
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        alt = path.with_name(f"{path.stem}_{stamp}{path.suffix}")
+        print(f"Warning: {path} is locked by another process; writing to {alt} instead.")
+        return alt
+
+
+def finalize_output_path(tmp_path: Path, out_path: Path) -> Path:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(tmp_path, out_path)
+        return out_path
+    except PermissionError:
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        alt = out_path.with_name(f"{out_path.stem}_{stamp}{out_path.suffix}")
+        print(f"Warning: could not replace locked file {out_path}; finalizing to {alt}.")
+        os.replace(tmp_path, alt)
+        return alt
 
 
 def resolve_ogr2ogr() -> str:
