@@ -2375,10 +2375,24 @@ body {
   filter: drop-shadow(0 0 6px rgba(249,115,22,0.3));
 }
 
+.os-road-static-connector {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2 3;
+  filter: drop-shadow(0 0 5px rgba(249,115,22,0.24));
+}
+
 .os-rail-static-line {
   stroke-linecap: round;
   stroke-linejoin: round;
   filter: drop-shadow(0 0 5px rgba(56,189,248,0.24));
+}
+
+.os-rail-static-connector {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 2 3;
+  filter: drop-shadow(0 0 6px rgba(56,189,248,0.34));
 }
 
 .os-rail-static-node {

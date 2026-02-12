@@ -4182,19 +4182,14 @@ function tweakHexColor(hex, delta = 0) {
 
 function osRoadColorForFeature(properties = {}) {
   const highway = String(properties.highway || "").toLowerCase();
-  const name = String(properties.name || "");
-  const motorwayId = (name.match(/\bM\d{1,3}\b/i) || [])[0] || "";
-  const key = motorwayId || name || highway || "road";
   const base = OS_ROAD_BASE_COLOURS[highway] || "#fb923c";
-  const shade = (hashStringToInt(key) % 5) * 10 - 20;
-  return tweakHexColor(base, shade);
+  return tweakHexColor(base, 8);
 }
 
 function osRailColorForFeature(properties = {}) {
-  const name = String(properties.name || "").trim();
-  const key = name || String(properties.railway || "rail");
-  const hue = hashStringToInt(key) % 360;
-  return `hsl(${hue} 72% 62%)`;
+  const kind = String(properties.railway || "").toLowerCase();
+  if (kind === "subway" || kind === "light_rail" || kind === "tram") return "#22d3ee";
+  return "#60a5fa";
 }
 
 async function fetchGeoJsonFromCandidates(paths) {
@@ -4299,8 +4294,8 @@ function staticRouteInBounds(coords = [], bounds = null) {
 
 function staticRoadVisibleAtZoom(type = "", zoom = 0) {
   const t = String(type || "").toLowerCase();
-  if (zoom <= 7) return t === "motorway" || t === "trunk" || t === "primary";
-  if (zoom <= 9) return t === "motorway" || t === "trunk" || t === "primary" || t === "secondary";
+  if (zoom <= 7) return t === "motorway" || t === "trunk" || t === "primary" || t === "secondary";
+  if (zoom <= 9) return t === "motorway" || t === "trunk" || t === "primary" || t === "secondary" || t === "tertiary";
   return true;
 }
 
@@ -4309,6 +4304,92 @@ function staticRailVisibleAtZoom(type = "", zoom = 0) {
   if (zoom <= 7) return t === "rail" || t === "light_rail" || t === "subway" || t === "tram";
   if (zoom <= 9) return t === "rail" || t === "light_rail" || t === "subway" || t === "tram" || t === "narrow_gauge";
   return true;
+}
+
+function distanceKm(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return Infinity;
+  const lat1 = Number(a[0]);
+  const lon1 = Number(a[1]);
+  const lat2 = Number(b[0]);
+  const lon2 = Number(b[1]);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Infinity;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const x = dLon * Math.cos(((lat1 + lat2) * 0.5) * rad);
+  const y = dLat;
+  return Math.sqrt(x * x + y * y) * 6371;
+}
+
+function buildEndpointConnectors(routes = [], maxGapKm = 1.4) {
+  const connectors = [];
+  const endpoints = [];
+  const cellSizeDeg = Math.max(0.0025, maxGapKm / 111);
+  const cells = new Map();
+  const pairSeen = new Set();
+
+  const cellKey = (lat, lon) => `${Math.floor(lat / cellSizeDeg)}|${Math.floor(lon / cellSizeDeg)}`;
+  const pushCell = (idx, endpoint) => {
+    const key = cellKey(endpoint[0], endpoint[1]);
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(idx);
+  };
+
+  for (let i = 0; i < routes.length; i++) {
+    const coords = Array.isArray(routes[i]?.coords) ? routes[i].coords : [];
+    if (coords.length < 2) continue;
+    const a = coords[0];
+    const b = coords[coords.length - 1];
+    endpoints.push({ routeIdx: i, endpoint: a, side: "s" });
+    pushCell(endpoints.length - 1, a);
+    endpoints.push({ routeIdx: i, endpoint: b, side: "e" });
+    pushCell(endpoints.length - 1, b);
+  }
+
+  const neighbourCellKeys = (lat, lon) => {
+    const r = Math.floor(lat / cellSizeDeg);
+    const c = Math.floor(lon / cellSizeDeg);
+    const out = [];
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) out.push(`${r + dr}|${c + dc}`);
+    }
+    return out;
+  };
+
+  for (let i = 0; i < endpoints.length; i++) {
+    const ep = endpoints[i];
+    const [lat, lon] = ep.endpoint;
+    let best = null;
+    for (const ck of neighbourCellKeys(lat, lon)) {
+      const idxs = cells.get(ck) || [];
+      for (const j of idxs) {
+        if (j === i) continue;
+        const other = endpoints[j];
+        if (!other || other.routeIdx === ep.routeIdx) continue;
+        const d = distanceKm(ep.endpoint, other.endpoint);
+        if (!Number.isFinite(d) || d > maxGapKm) continue;
+        if (!best || d < best.d) best = { d, other };
+      }
+    }
+    if (!best) continue;
+    const r1 = routes[ep.routeIdx];
+    const r2 = routes[best.other.routeIdx];
+    const typeMatch = String(r1?.type || "").toLowerCase() === String(r2?.type || "").toLowerCase();
+    const n1 = String(r1?.name || "").trim().toLowerCase();
+    const n2 = String(r2?.name || "").trim().toLowerCase();
+    const nameMatch = !!n1 && !!n2 && n1 === n2;
+    if (!typeMatch && !nameMatch) continue;
+
+    const pairKey = [buildCoordKey(ep.endpoint, 5), buildCoordKey(best.other.endpoint, 5)].sort().join("|");
+    if (pairSeen.has(pairKey)) continue;
+    pairSeen.add(pairKey);
+    connectors.push({
+      coords: [ep.endpoint, best.other.endpoint],
+      type: r1?.type || r2?.type || "",
+      name: r1?.name || r2?.name || ""
+    });
+  }
+  return connectors;
 }
 
 function buildCoordKey(coord, precision = 4) {
@@ -4475,14 +4556,29 @@ function renderStaticRoadOverlay() {
     if (!staticRouteInBounds(coords, bounds)) continue;
     const line = L.polyline(coords, {
       color: osRoadColorForFeature({ highway: r.type, name: r.name }),
-      weight: zoom <= 8 ? 2.2 : 2.9,
-      opacity: zoom <= 8 ? 0.74 : 0.86,
-      smoothFactor: 1.2,
+      weight: zoom <= 8 ? 3.4 : 4.2,
+      opacity: zoom <= 8 ? 0.88 : 0.92,
+      smoothFactor: 1.8,
       className: "os-road-static-line"
     }).addTo(OS_DERIVED_STATE.roadsLayer);
     if (r.name && zoom >= 9) {
       line.bindTooltip(`${escapeHtml(r.name)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.84 });
     }
+  }
+
+  const visibleRoutes = routes.filter((r) => {
+    const coords = Array.isArray(r?.coords) ? r.coords : [];
+    return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
+  });
+  const roadConnectors = buildEndpointConnectors(visibleRoutes, zoom <= 8 ? 2.1 : 1.2);
+  for (const c of roadConnectors) {
+    L.polyline(c.coords, {
+      color: osRoadColorForFeature({ highway: c.type, name: c.name }),
+      weight: zoom <= 8 ? 2.8 : 3.2,
+      opacity: 0.78,
+      smoothFactor: 2,
+      className: "os-road-static-connector"
+    }).addTo(OS_DERIVED_STATE.roadsLayer);
   }
 }
 
@@ -4506,13 +4602,29 @@ function renderStaticRailOverlay() {
     if (!staticRouteInBounds(coords, bounds)) continue;
     const line = L.polyline(coords, {
       color: osRailColorForFeature({ railway: r.type, name: r.name }),
-      weight: zoom <= 8 ? 1.5 : 2.0,
-      opacity: zoom <= 8 ? 0.66 : 0.8,
+      weight: zoom <= 8 ? 3.2 : 4.0,
+      opacity: zoom <= 8 ? 0.86 : 0.92,
+      smoothFactor: 1.8,
       className: "os-rail-static-line"
     }).addTo(OS_DERIVED_STATE.railLayer);
     if (r.name && zoom >= 9) {
       line.bindTooltip(`${escapeHtml(r.name)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.86 });
     }
+  }
+
+  const visibleRoutes = routes.filter((r) => {
+    const coords = Array.isArray(r?.coords) ? r.coords : [];
+    return coords.length >= 2 && staticRailVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
+  });
+  const railConnectors = buildEndpointConnectors(visibleRoutes, zoom <= 8 ? 2.4 : 1.5);
+  for (const c of railConnectors) {
+    L.polyline(c.coords, {
+      color: osRailColorForFeature({ railway: c.type, name: c.name }),
+      weight: zoom <= 8 ? 2.6 : 3.0,
+      opacity: 0.8,
+      smoothFactor: 2,
+      className: "os-rail-static-connector"
+    }).addTo(OS_DERIVED_STATE.railLayer);
   }
 
   if (zoom < 8) return;
