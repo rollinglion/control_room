@@ -137,6 +137,22 @@
           <div id="psc_results"></div>
         </details>
 
+        <details class="panel-disclosure" id="dvla-ops-block">
+          <summary>DVLA Vehicle Lookup</summary>
+          <label for="dvla-vrm-input">Registration Number (VRM)</label>
+          <div class="roads-row">
+            <input id="dvla-vrm-input" type="text" placeholder="e.g. AB12CDE" />
+            <button id="dvla-lookup-btn" class="btn-primary btn-sm" type="button">Lookup</button>
+          </div>
+          <div class="cp-btn-row">
+            <button id="dvla-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
+          </div>
+          <div class="psc-help-text">
+            Queries DVLA Vehicle Enquiry Service via proxy. Results can be added to map as i2 Vehicle entities.
+          </div>
+          <div id="dvla-results" class="nr-results"></div>
+        </details>
+
       </div>
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Entities Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
@@ -536,6 +552,7 @@
   <script src="js/national_rail.js"></script>
   <script src="js/roads_live.js"></script>
   <script src="js/opensky.js"></script>
+  <script src="js/dvla.js"></script>
   <script src="js/system_health.js"></script>
   <script src="js/i2_workspace.js"></script>
 

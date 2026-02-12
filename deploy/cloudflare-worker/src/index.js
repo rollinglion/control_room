@@ -9,10 +9,11 @@ const WEBTRIS_API_BASE = "https://webtris.highwaysengland.co.uk/api";
 const SIGNALBOX_API_BASE = "https://api.signalbox.io/v2.5";
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search";
 const AVIATIONSTACK_BASE = "http://api.aviationstack.com/v1";
+const DVLA_VES_API_BASE = "https://driver-vehicle-licensing.api.gov.uk";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Access-Control-Max-Age": "86400",
 };
@@ -136,12 +137,48 @@ function buildSignalboxPath(url) {
 export default {
   async fetch(request, env) {
     if (request.method === "OPTIONS") return withCors(new Response(null, { status: 204 }));
-    if (request.method !== "GET") return json({ error: "Method not allowed" }, 405);
+    const method = String(request.method || "GET").toUpperCase();
 
     const url = new URL(request.url);
     const path = url.pathname;
 
     try {
+      if (method === "GET" && path.startsWith("/dvla/health")) {
+        return json({
+          ok: true,
+          configured: !!env.DVLA_API_KEY,
+          endpoint: `${DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles`
+        });
+      }
+
+      if (method === "POST" && path.startsWith("/dvla/vehicle")) {
+        if (!env.DVLA_API_KEY) return json({ error: "DVLA_API_KEY not configured" }, 500);
+        let body = {};
+        try {
+          body = await request.json();
+        } catch (_) {
+          return json({ error: "Invalid JSON body" }, 400);
+        }
+        const registrationNumber = String(body?.registrationNumber || "")
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, "")
+          .trim();
+        if (!registrationNumber) return json({ error: "registrationNumber is required" }, 400);
+
+        const upstreamResp = await fetch(`${DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles`, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "x-api-key": env.DVLA_API_KEY
+          },
+          body: JSON.stringify({ registrationNumber })
+        });
+        return withCors(upstreamResp);
+      }
+
+      if (method !== "GET") return json({ error: "Method not allowed" }, 405);
+
       if (path.startsWith("/ch/")) {
         if (!env.CH_API_KEY) return json({ error: "CH_API_KEY not configured" }, 500);
         const upstreamUrl = CH_API_BASE + path.replace(/^\/ch/, "") + url.search;

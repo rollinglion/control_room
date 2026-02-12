@@ -86,6 +86,7 @@ $ch = $envMap["CH_API_KEY"]
 $osPlaces = $envMap["OS_PLACES_API_KEY"]
 $signalbox = $envMap["SIGNALBOX_API_KEY"]
 $aviation = $envMap["AVIATIONSTACK_API_KEY"]
+$dvla = $envMap["DVLA_API_KEY"]
 
 $who = & $wranglerCmd whoami 2>&1
 $isAuthed = ($LASTEXITCODE -eq 0) -and (-not ($who -join "`n" -match "not authenticated"))
@@ -111,6 +112,7 @@ try {
   Put-WranglerSecret -WranglerCmd $wranglerCmd -Name "OS_PLACES_API_KEY" -Value $osPlaces -WorkDir $workerDir
   Put-WranglerSecret -WranglerCmd $wranglerCmd -Name "SIGNALBOX_API_KEY" -Value $signalbox -WorkDir $workerDir
   Put-WranglerSecret -WranglerCmd $wranglerCmd -Name "AVIATIONSTACK_API_KEY" -Value $aviation -WorkDir $workerDir
+  Put-WranglerSecret -WranglerCmd $wranglerCmd -Name "DVLA_API_KEY" -Value $dvla -WorkDir $workerDir
 
   Upsert-JsGlobal -FilePath $apiKeysJs -Name "CONTROL_ROOM_API_BASE" -Value $workerUrl
   if (-not [string]::IsNullOrWhiteSpace($ch)) {

@@ -21,6 +21,7 @@ AVIATIONSTACK_BASE = "http://api.aviationstack.com/v1"
 UK_RAIL_STATIONS_URL = "https://raw.githubusercontent.com/davwheat/uk-railway-stations/main/stations.json"
 WEBTRIS_API_BASE = "https://webtris.highwaysengland.co.uk/api"
 SIGNALBOX_API_BASE = "https://api.signalbox.io/v2.5"
+DVLA_VES_API_BASE = "https://driver-vehicle-licensing.api.gov.uk"
 
 _station_catalog_cache = {
     "loaded": False,
@@ -50,6 +51,8 @@ def load_env_file():
                         print(f"NRE_LDBWS_TOKEN loaded: {value.strip()[:8]}...")
                     if key.strip() == "SIGNALBOX_API_KEY":
                         print(f"SIGNALBOX_API_KEY loaded: {value.strip()[:8]}...")
+                    if key.strip() == "DVLA_API_KEY":
+                        print(f"DVLA_API_KEY loaded: {value.strip()[:8]}...")
     else:
         print(f"Warning: No .env file found at {env_path}")
         print("Set CH_API_KEY environment variable or create .env file")
@@ -332,6 +335,11 @@ class Handler(SimpleHTTPRequestHandler):
             self._send_json({"ok": True, "configured": bool(key), "endpoint": SIGNALBOX_API_BASE})
             return
 
+        if self.path.startswith("/dvla/health"):
+            key = os.environ.get("DVLA_API_KEY", "").strip()
+            self._send_json({"ok": True, "configured": bool(key), "endpoint": f"{DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles"})
+            return
+
         if self.path.startswith("/signalbox/trains"):
             key = os.environ.get("SIGNALBOX_API_KEY", "").strip()
             if not key:
@@ -611,6 +619,54 @@ class Handler(SimpleHTTPRequestHandler):
 
         return super().do_GET()
 
+    def do_POST(self):
+        if self.path.startswith("/dvla/vehicle"):
+            api_key = os.environ.get("DVLA_API_KEY", "").strip()
+            if not api_key:
+                self._send_json({"error": "DVLA_API_KEY env var not set"}, status=500)
+                return
+            length = 0
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except Exception:
+                length = 0
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                body = json.loads(raw.decode("utf-8", errors="replace"))
+            except Exception:
+                self._send_json({"error": "Invalid JSON body"}, status=400)
+                return
+            registration = str(body.get("registrationNumber") or "").upper().replace(" ", "").strip()
+            if not registration:
+                self._send_json({"error": "registrationNumber is required"}, status=400)
+                return
+
+            upstream_url = f"{DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles"
+            payload = json.dumps({"registrationNumber": registration}).encode("utf-8")
+            req = urllib.request.Request(upstream_url, data=payload, method="POST")
+            req.add_header("Accept", "application/json")
+            req.add_header("Content-Type", "application/json")
+            req.add_header("x-api-key", api_key)
+            req.add_header("User-Agent", "ControlRoom/1.0 (+https://localhost)")
+            try:
+                with urllib.request.urlopen(req, timeout=25) as resp:
+                    body = resp.read()
+                    self.send_response(resp.status)
+                    self.send_header("Content-Type", resp.headers.get("Content-Type", "application/json"))
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+            except urllib.error.HTTPError as e:
+                err_body = e.read() if hasattr(e, "read") else b"{}"
+                self._send_json_error(e.code, err_body)
+                return
+            except Exception as e:
+                self._send_json({"error": "DVLA upstream failed", "detail": str(e)}, status=502)
+                return
+
+        self._send_json({"error": "Not found"}, status=404)
+
 
 def main():
     load_env_file()
@@ -636,6 +692,7 @@ def main():
     print(f"Proxy:  /geo/search?q=... -> {NOMINATIM_BASE}")
     print(f"Proxy:  /flight/schedule?callsign=BAW130&icao24=... -> {AVIATIONSTACK_BASE}/flights")
     print(f"Proxy:  /signalbox/trains?... -> {SIGNALBOX_API_BASE}/trains")
+    print(f"Proxy:  /dvla/vehicle [POST] -> {DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles")
     print(f"{'=' * 60}\n")
     server.serve_forever()
 

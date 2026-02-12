@@ -52,7 +52,8 @@ async function runSystemHealthChecks() {
     ["WebTRIS Roads", "/webtris/v1.0/sites", 200],
     ["Rail Stations", "/nre/stations?q=kgx&limit=3", 200],
     ["Companies House", "/ch/search/companies?q=hsbc&items_per_page=1", 200],
-    ["Postcodes", "/postcodes/postcodes/SW1A1AA", 200]
+    ["Postcodes", "/postcodes/postcodes/SW1A1AA", 200],
+    ["DVLA VES", "/dvla/health", 200]
   ];
 
   const results = [];

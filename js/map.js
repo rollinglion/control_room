@@ -2857,6 +2857,60 @@ function clearAllEntities() {
   updateDashboardCounts();
 }
 
+function getVehicleEntityIconData() {
+  const vehicles = ICON_CATEGORIES.vehicles || {};
+  const carIcon = (vehicles.icons || []).find((ic) => ic.id === "car") || (vehicles.icons || [])[0];
+  return {
+    id: carIcon?.id || "car",
+    name: carIcon?.name || "Vehicle",
+    icon: carIcon?.icon || vehicles.defaultIcon || ICON_CATEGORIES.vehicles?.defaultIcon,
+    categoryColor: vehicles.color || "#f59e0b",
+    categoryName: vehicles.name || "Vehicles"
+  };
+}
+
+function buildVehicleI2EntityData(vehicle = {}) {
+  const vehicleEntity = getI2EntityByKey("ET8") || getI2EntityByKey("Vehicle");
+  const values = [];
+  if (vehicle.registrationNumber) values.push({ propertyName: "Registration Mark", value: String(vehicle.registrationNumber) });
+  if (vehicle.make) values.push({ propertyName: "Vehicle Make", value: String(vehicle.make) });
+  if (vehicle.model) values.push({ propertyName: "Vehicle Model", value: String(vehicle.model) });
+  if (vehicle.colour) values.push({ propertyName: "Vehicle Colour", value: String(vehicle.colour) });
+  if (vehicle.yearOfManufacture) values.push({ propertyName: "Year", value: String(vehicle.yearOfManufacture) });
+  if (vehicle.fuelType) values.push({ propertyName: "Fuel Type", value: String(vehicle.fuelType) });
+  if (vehicle.taxStatus) values.push({ propertyName: "Tax Status", value: String(vehicle.taxStatus) });
+  if (vehicle.motStatus) values.push({ propertyName: "MOT Status", value: String(vehicle.motStatus) });
+  return {
+    entityId: vehicleEntity?.entity_id || "ET8",
+    entityName: vehicleEntity?.entity_name || "Vehicle",
+    values
+  };
+}
+
+function addDvlaVehicleEntity(vehicle = {}, latLng = null) {
+  const vrm = String(vehicle.registrationNumber || "").trim().toUpperCase();
+  if (!vrm) return null;
+  const center = latLng || [map.getCenter().lat, map.getCenter().lng];
+  const label = [vrm, vehicle.make, vehicle.model].filter(Boolean).join(" | ");
+  const notes = [
+    vehicle.yearOfManufacture ? `Year ${vehicle.yearOfManufacture}` : "",
+    vehicle.colour ? `Colour ${vehicle.colour}` : "",
+    vehicle.fuelType ? `Fuel ${vehicle.fuelType}` : "",
+    vehicle.taxStatus ? `Tax ${vehicle.taxStatus}` : "",
+    vehicle.motStatus ? `MOT ${vehicle.motStatus}` : ""
+  ].filter(Boolean).join(" | ");
+  const entityId = placeEntity(
+    center,
+    getVehicleEntityIconData(),
+    label || vrm,
+    "",
+    notes,
+    buildVehicleI2EntityData(vehicle)
+  );
+  if (entityId) setStatus(`Added vehicle entity: ${vrm}`);
+  return entityId;
+}
+
 // Update dashboard counters
 function updateDashboardCounts() {
   const entityCount = document.getElementById('entity_count');
@@ -2883,6 +2937,7 @@ window.createOrganisationMarker = createOrganisationMarker;
 window.addPersonToMap = addPersonToMap;
 window.expandOfficerCompanies = expandOfficerCompanies;
 window.getCompanyEntityByNumber = getCompanyEntityByNumber;
+window.addDvlaVehicleEntity = addDvlaVehicleEntity;
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MANUAL CONNECTION DRAWING

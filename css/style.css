@@ -2143,6 +2143,39 @@ body {
   margin-top: 3px;
 }
 
+.dvla-card {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(56,189,248,0.22);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.dvla-title {
+  color: #93c5fd;
+  font-weight: 700;
+  margin-bottom: 6px;
+  letter-spacing: 0.4px;
+}
+
+.dvla-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.dvla-key {
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+}
+
+.dvla-val {
+  color: #e2e8f0;
+  text-align: right;
+}
+
 .system-health-results {
   margin-top: 8px;
 }
