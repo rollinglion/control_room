@@ -45,6 +45,7 @@ const I2_DEFAULT_BY_CATEGORY = {
   financial: "Financial Account",
   vehicles: "Vehicle",
   aviation: "Aircraft",
+  military: "Operation",
   communication: "Communication Entity",
   online_services: "Communication Entity",
   real_estate: "Location",
@@ -60,8 +61,9 @@ const I2_ENTITY_TO_CATEGORY = {
   location: "buildings",
   vehicle: "vehicles",
   aircraft: "aviation",
+  firearm: "military",
+  operation: "military",
   vessel: "vehicles",
-  operation: "people",
   "communication entity": "communication",
   "financial account": "financial"
 };
@@ -623,6 +625,8 @@ function showEntityPlacementDialog(latLng) {
   // Pre-populate icons for the selected category
   updateIconDropdown(category);
   populateI2EntityTypeSelect(category);
+  const milInput = document.getElementById("entity-mil-symbol");
+  if (milInput) milInput.value = "";
   
   // Update coordinates display
   const coordPair = normalizeLatLng(latLng);
@@ -665,6 +669,8 @@ function closeEntityPanel() {
   
   // Clear form
   document.getElementById('entity-placement-form').reset();
+  const milInput = document.getElementById("entity-mil-symbol");
+  if (milInput) milInput.value = "";
   document.getElementById('entity-coords').textContent = '--';
   const i2Fields = document.getElementById("entity-i2-fields");
   if (i2Fields) {
@@ -692,6 +698,7 @@ function defaultCategoryForI2Entity(entityTypeKey) {
   if (I2_ENTITY_TO_CATEGORY[name]) return I2_ENTITY_TO_CATEGORY[name];
 
   if (/(person|subject|individual|officer|witness|suspect|victim|alias)/.test(name)) return "people";
+  if (/(operation|military|firearm|weapon|explosive|ordnance|mission|unit|sigint)/.test(name)) return "military";
   if (/(location|address|site|premises|property|building|place|town|city|postcode)/.test(name)) return "buildings";
   if (/(aircraft|flight|aviation|airport|airline|helicopter)/.test(name)) return "aviation";
   if (/(vehicle|car|van|truck|lorry|boat|vessel|ship|train)/.test(name)) return "vehicles";
@@ -1358,6 +1365,19 @@ const ICON_CATEGORIES = {
       { id: 'crew', name: 'Cabin Crew', icon: 'gfx/map_icons/people/stewardess.png', keywords: ['crew', 'steward', 'stewardess'] }
     ]
   },
+  military: {
+    name: 'Military',
+    color: '#ef4444',
+    defaultIcon: 'gfx/map_icons/people/soldier.png',
+    icons: [
+      { id: 'mil_unit', name: 'Military Unit', icon: 'gfx/map_icons/people/soldier.png', keywords: ['military', 'unit', 'soldier'] },
+      { id: 'mil_intel', name: 'Intel / Surveillance', icon: 'gfx/map_icons/people/spy.png', keywords: ['intelligence', 'surveillance', 'spy'] },
+      { id: 'mil_air', name: 'Air Asset', icon: 'gfx/map_icons/people/pilot.png', keywords: ['air', 'pilot', 'aircraft'] },
+      { id: 'mil_naval', name: 'Naval Asset', icon: 'gfx/map_icons/people/captain.png', keywords: ['naval', 'sea', 'ship'] },
+      { id: 'mil_police', name: 'Armed Police', icon: 'gfx/map_icons/people/police.png', keywords: ['police', 'armed', 'response'] },
+      { id: 'mil_operation', name: 'Operation', icon: 'gfx/map_icons/people/secretservice.png', keywords: ['operation', 'mission', 'task force'] }
+    ]
+  },
   communication: {
     name: 'Communication',
     color: '#8b5cf6',
@@ -1410,6 +1430,141 @@ function getAllIcons() {
     });
   }
   return allIcons;
+}
+
+const MIL_SYMBOL_SOURCE_FILES = [
+  "gfx/joint-military-symbology-xml-dev/samples/imagefile_name_category_tags/Military-Air-Source-Icons.csv",
+  "gfx/joint-military-symbology-xml-dev/samples/imagefile_name_category_tags/Military-Land-Unit-Source-Icons.csv",
+  "gfx/joint-military-symbology-xml-dev/samples/imagefile_name_category_tags/Military-Sea-Surface-Source-Icons.csv",
+  "gfx/joint-military-symbology-xml-dev/samples/imagefile_name_category_tags/Military-Sigint-Source-Icons.csv"
+];
+let MIL_SYMBOL_INDEX = [];
+
+function parseCsvRows(text) {
+  const rows = [];
+  const lines = String(text || "").split(/\r?\n/).filter((l) => l.trim());
+  if (!lines.length) return rows;
+  const parseLine = (line) => {
+    const out = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQuotes && line[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (ch === "," && !inQuotes) {
+        out.push(cur);
+        cur = "";
+      } else {
+        cur += ch;
+      }
+    }
+    out.push(cur);
+    return out.map((v) => v.trim());
+  };
+
+  const headers = parseLine(lines[0]);
+  for (let i = 1; i < lines.length; i++) {
+    const values = parseLine(lines[i]);
+    const row = {};
+    headers.forEach((h, idx) => {
+      row[h] = values[idx] || "";
+    });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function symbolSvgPathFromFilePath(sourcePath) {
+  const raw = String(sourcePath || "");
+  const m = raw.match(/Appendices\\([^\\]+)\\([^\\]+)\.emf$/i);
+  if (!m) return "";
+  return `gfx/joint-military-symbology-xml-dev/svg/Appendices/${m[1]}/${m[2]}.svg`;
+}
+
+function hydrateMilitarySymbolDatalist() {
+  const list = document.getElementById("entity-mil-symbol-list");
+  if (!list) return;
+  const top = MIL_SYMBOL_INDEX.slice(0, 400);
+  list.innerHTML = top
+    .map((s) => `<option value="${escapeHtml(`${s.sidc} | ${s.name}`)}"></option>`)
+    .join("");
+}
+
+async function loadMilitarySymbolsCatalog() {
+  const entries = [];
+  for (const file of MIL_SYMBOL_SOURCE_FILES) {
+    try {
+      const r = await fetch(file);
+      if (!r.ok) continue;
+      const text = await r.text();
+      const rows = parseCsvRows(text);
+      for (const row of rows.slice(0, 300)) {
+        const sidc = String(row.styleItemUniqueId || "").trim();
+        const name = String(row.styleItemName || "").trim();
+        const svgPath = symbolSvgPathFromFilePath(row.filePath || "");
+        if (!sidc || !name || !svgPath) continue;
+        entries.push({
+          sidc,
+          name,
+          icon: svgPath,
+          search: `${sidc} ${name} ${row.styleItemTags || ""}`.toLowerCase()
+        });
+      }
+    } catch (err) {
+      console.warn("Military symbol source load failed:", file, err);
+    }
+  }
+
+  const bySidc = {};
+  for (const e of entries) {
+    if (!bySidc[e.sidc]) bySidc[e.sidc] = e;
+  }
+  MIL_SYMBOL_INDEX = Object.values(bySidc).sort((a, b) => a.name.localeCompare(b.name));
+  hydrateMilitarySymbolDatalist();
+}
+
+function getMilitarySelectionForPlacement(rawInput) {
+  const text = String(rawInput || "").trim().toLowerCase();
+  if (!text) return null;
+  const first = MIL_SYMBOL_INDEX.find((s) => `${s.sidc} | ${s.name}`.toLowerCase() === text);
+  if (first) return first;
+  return MIL_SYMBOL_INDEX.find((s) => s.search.includes(text) || s.sidc.toLowerCase() === text) || null;
+}
+
+function applyMilitarySelectionToForm(selection) {
+  if (!selection) return false;
+  const categorySelect = document.getElementById("entity-category");
+  const iconSelect = document.getElementById("entity-icon");
+  if (!categorySelect || !iconSelect) return false;
+
+  categorySelect.value = "military";
+  const catalog = ICON_CATEGORIES.military;
+  const dynamicId = `mil_sidc_${selection.sidc}`;
+  let existing = catalog.icons.find((ic) => ic.id === dynamicId);
+  if (!existing) {
+    existing = {
+      id: dynamicId,
+      name: `${selection.name} (${selection.sidc})`,
+      icon: selection.icon,
+      keywords: [selection.sidc, selection.name.toLowerCase(), "military", "sidc"]
+    };
+    catalog.icons.unshift(existing);
+    if (catalog.icons.length > 200) catalog.icons = catalog.icons.slice(0, 200);
+  }
+  updateIconDropdown("military");
+  const idx = catalog.icons.findIndex((ic) => ic.id === dynamicId);
+  if (idx >= 0) {
+    iconSelect.value = String(idx);
+    ENTITY_ICON_MANUAL_OVERRIDE = true;
+    return true;
+  }
+  return false;
 }
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -1750,6 +1905,7 @@ window.removeConnection = removeConnection;
 window.editConnection = editConnection;
 window.highlightConnections = highlightConnections;
 window.clearConnectionHighlights = clearConnectionHighlights;
+window.startI2EntityPlacement = startI2EntityPlacement;
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // MANUAL CONNECTION DRAWING
@@ -3251,6 +3407,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Entity placement panel handlers
   const entityCategorySelect = document.getElementById('entity-category');
   const entityIconSelect = document.getElementById('entity-icon');
+  const entityMilSymbolInput = document.getElementById('entity-mil-symbol');
   const entityI2TypeSelect = document.getElementById('entity-i2-type');
   const entityLabelInput = document.getElementById('entity-label');
   const entityForm = document.getElementById('entity-placement-form');
@@ -3260,6 +3417,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const entityImportFile = document.getElementById('entity-import-file');
   const entityImportRunBtn = document.getElementById('entity-import-run');
   const entityImportClearBtn = document.getElementById('entity-import-clear');
+  loadMilitarySymbolsCatalog().catch((err) => console.warn("Military symbol catalog load failed:", err));
   
   // Category change handler
   entityCategorySelect?.addEventListener('change', (e) => {
@@ -3299,6 +3457,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     ENTITY_ICON_MANUAL_OVERRIDE = true;
   });
 
+  entityMilSymbolInput?.addEventListener('change', () => {
+    const picked = getMilitarySelectionForPlacement(entityMilSymbolInput.value);
+    if (picked) {
+      applyMilitarySelectionToForm(picked);
+      setStatus(`Military symbol selected: ${picked.sidc}`);
+    }
+  });
+  entityMilSymbolInput?.addEventListener('keydown', (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const picked = getMilitarySelectionForPlacement(entityMilSymbolInput.value);
+    if (picked) {
+      applyMilitarySelectionToForm(picked);
+      setStatus(`Military symbol selected: ${picked.sidc}`);
+    }
+  });
+
   entityI2FieldsWrap?.addEventListener('change', () => {
     const activeField = document.activeElement;
     if (activeField && activeField.matches && activeField.matches("[data-i2-property-id]")) {
@@ -3330,9 +3505,15 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     
     const rawLabel = entityLabelInput.value.trim();
-    const categoryKey = entityCategorySelect.value;
-    const iconIndex = parseInt(entityIconSelect.value);
+    let categoryKey = entityCategorySelect.value;
+    let iconIndex = parseInt(entityIconSelect.value, 10);
     const latLng = window._pendingEntityLatLng;
+    const militarySelection = getMilitarySelectionForPlacement(entityMilSymbolInput?.value || "");
+    if (militarySelection) {
+      applyMilitarySelectionToForm(militarySelection);
+      categoryKey = "military";
+      iconIndex = parseInt(entityIconSelect.value, 10);
+    }
     const i2EntityData = collectI2EntityFormData();
     if (!i2EntityData) {
       alert('Select an i2 entity type for this entity');
@@ -3503,12 +3684,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       renderResults(resultsDiv, matches, false);
 
       if (matches.length) {
-        try {
-          await plotCompanies(matches);
-        } catch (plotErr) {
-          console.error("Plotting error:", plotErr);
-          setStatus(`Search returned ${matches.length} result${matches.length === 1 ? "" : "s"}; some map points could not be plotted`);
-        }
+        setStatus(`Search returned ${matches.length} result${matches.length === 1 ? "" : "s"} - click entries to plot selected companies`);
       } else {
         setStatus("No matches found");
       }

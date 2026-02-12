@@ -22,9 +22,8 @@
       <div class="cp-tabs">
         <button class="cp-tab active" data-tab="search" title="Search and plot companies on map">Companies</button>
         <button class="cp-tab" data-tab="people" title="Search for people and PSC data">People</button>
-        <button class="cp-tab" data-tab="entities" title="Add custom entities to map">Entities</button>
+        <button class="cp-tab" data-tab="entities" title="Add custom entities to map">Entities / i2</button>
         <button class="cp-tab" data-tab="layers" title="Toggle map layers and base map">Layers</button>
-        <button class="cp-tab" data-tab="i2" title="i2 planning, schema and import template intelligence">I2</button>
       </div>
 
       <!-- â•â•â• Company Search Tab â•â•â• -->
@@ -144,10 +143,10 @@
       <!-- â•â•â• Entities Tab â•â•â• -->
       <div class="cp-tab-pane" id="tab-entities">
         <div class="entity-help">
-          <strong>Add Custom Entities to Map</strong>
+          <strong>Entity Placement + i2 Workspace</strong>
           <p><strong>To place:</strong> Click a category below -> click on map -> enter details (name, address, notes)</p>
           <p><strong>To connect:</strong> Click Connect on any entity -> click target entity -> enter label</p>
-          <p>Icons auto-suggest based on name (e.g., "HSBC" -> HSBC icon)</p>
+          <p>Icons auto-suggest based on i2 fields and entity content (including military SIDC/JMSML symbols).</p>
         </div>
 
         <div class="entity-import-panel">
@@ -176,6 +175,38 @@
             <span id="connection_count" class="entity-stat-value">0</span>
           </div>
         </div>
+
+        <details class="panel-disclosure" id="entities-i2-workspace">
+          <summary>i2 Planning Workspace</summary>
+          <div class="i2-stats-grid">
+            <div class="i2-stat-card">
+              <span class="i2-stat-label">Import Templates</span>
+              <span id="i2-template-count" class="i2-stat-value">--</span>
+            </div>
+            <div class="i2-stat-card">
+              <span class="i2-stat-label">Entity Types</span>
+              <span id="i2-entity-count" class="i2-stat-value">--</span>
+            </div>
+            <div class="i2-stat-card">
+              <span class="i2-stat-label">Link Types</span>
+              <span id="i2-link-count" class="i2-stat-value">--</span>
+            </div>
+            <div class="i2-stat-card">
+              <span class="i2-stat-label">Match Rules</span>
+              <span id="i2-rule-count" class="i2-stat-value">--</span>
+            </div>
+          </div>
+
+          <label for="i2-template-select">Import Template</label>
+          <select id="i2-template-select">
+            <option value="">Loading templates...</option>
+          </select>
+          <div id="i2-template-details" class="i2-panel-block">Select a template to inspect mappings.</div>
+
+          <label for="i2-entity-search">Entity Type Search</label>
+          <input id="i2-entity-search" type="text" placeholder="e.g. Communication Entity, Aircraft, Person" />
+          <div id="i2-entity-results" class="i2-panel-block">Loading catalog...</div>
+        </details>
       </div>
 
       <!-- â•â•â• Layers Tab â•â•â• -->
@@ -391,42 +422,6 @@
 
       </div>
 
-      <!-- I2 Workspace Tab -->
-      <div class="cp-tab-pane" id="tab-i2">
-        <div class="entity-help">
-          <strong>I2 Operations Workspace</strong>
-          <p>Uses parsed local i2 specifications to drive import planning, schema search, and Excel collaboration.</p>
-        </div>
-
-        <div class="i2-stats-grid">
-          <div class="i2-stat-card">
-            <span class="i2-stat-label">Import Templates</span>
-            <span id="i2-template-count" class="i2-stat-value">--</span>
-          </div>
-          <div class="i2-stat-card">
-            <span class="i2-stat-label">Entity Types</span>
-            <span id="i2-entity-count" class="i2-stat-value">--</span>
-          </div>
-          <div class="i2-stat-card">
-            <span class="i2-stat-label">Link Types</span>
-            <span id="i2-link-count" class="i2-stat-value">--</span>
-          </div>
-          <div class="i2-stat-card">
-            <span class="i2-stat-label">Match Rules</span>
-            <span id="i2-rule-count" class="i2-stat-value">--</span>
-          </div>
-        </div>
-
-        <label for="i2-template-select">Import Template</label>
-        <select id="i2-template-select">
-          <option value="">Loading templates...</option>
-        </select>
-        <div id="i2-template-details" class="i2-panel-block">Select a template to inspect mappings.</div>
-
-        <label for="i2-entity-search">Entity Type Search</label>
-        <input id="i2-entity-search" type="text" placeholder="e.g. Communication Entity, Aircraft, Person" />
-        <div id="i2-entity-results" class="i2-panel-block">Loading catalog...</div>
-      </div>
     </div>
   </div>
 
@@ -455,7 +450,11 @@
         <select id="entity-icon" required>
           <option value="">Select icon...</option>
         </select>
-        
+
+        <label for="entity-mil-symbol">Military Symbol (SIDC/JMSML, optional)</label>
+        <input id="entity-mil-symbol" type="text" list="entity-mil-symbol-list" placeholder="e.g. 01110104 or Fighter" />
+        <datalist id="entity-mil-symbol-list"></datalist>
+
         <label for="entity-i2-type">i2 Entity Type</label>
         <select id="entity-i2-type">
           <option value="">Loading i2 entity types...</option>

@@ -100,7 +100,7 @@
       const propNames = (e.properties || []).slice(0, 6).map((p) => p.property_name || p.property_id);
       const more = Math.max(0, (e.properties || []).length - propNames.length);
       return (
-        `<div class="i2-entity-card">` +
+        `<div class="i2-entity-card" data-i2-place-id="${esc(e.entity_id || "")}">` +
         `<div class="i2-entity-title">${esc(e.entity_name || e.entity_id)}</div>` +
         `<div class="i2-entity-meta">` +
         `<span>ID ${esc(e.entity_id || "")}</span>` +
@@ -111,6 +111,15 @@
         `</div>`
       );
     }).join("");
+
+    wrap.querySelectorAll("[data-i2-place-id]").forEach((card) => {
+      card.addEventListener("click", () => {
+        const entityId = card.getAttribute("data-i2-place-id");
+        if (entityId && typeof window.startI2EntityPlacement === "function") {
+          window.startI2EntityPlacement(entityId);
+        }
+      });
+    });
   }
 
   function wireEntitySearch() {
