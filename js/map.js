@@ -610,6 +610,7 @@ function showEntityPlacementDialog(latLng) {
   // Open the entity placement panel
   const panel = document.getElementById('entity-placement-panel');
   panel.classList.add('open');
+  panel.classList.remove('minimized');
   
   // Populate category dropdown
   const categorySelect = document.getElementById('entity-category');
@@ -627,14 +628,22 @@ function showEntityPlacementDialog(latLng) {
   // Pre-populate icons for the selected category
   updateIconDropdown(category);
   populateI2EntityTypeSelect(category);
-  const milSelect = document.getElementById("entity-mil-symbol-select");
-  if (milSelect) milSelect.value = "";
   
   // Update coordinates display
   const coordPair = normalizeLatLng(latLng);
   document.getElementById('entity-coords').textContent = `${coordPair[0].toFixed(5)}, ${coordPair[1].toFixed(5)}`;
   
   // Avoid auto-focus to prevent viewport jump when selecting entity types.
+}
+
+function toggleEntityPanelMinimized() {
+  const panel = document.getElementById("entity-placement-panel");
+  const btn = document.getElementById("entity-panel-minimize");
+  if (!panel || !btn) return;
+  const nextMinimized = !panel.classList.contains("minimized");
+  panel.classList.toggle("minimized", nextMinimized);
+  btn.textContent = nextMinimized ? "+" : "-";
+  btn.title = nextMinimized ? "Restore panel" : "Minimize panel";
 }
 
 function normalizeLatLng(latLng) {
@@ -730,11 +739,15 @@ function updateEntityIconPreview(category, iconIndex) {
 function closeEntityPanel() {
   const panel = document.getElementById('entity-placement-panel');
   panel.classList.remove('open');
+  panel.classList.remove("minimized");
+  const minBtn = document.getElementById("entity-panel-minimize");
+  if (minBtn) {
+    minBtn.textContent = "-";
+    minBtn.title = "Minimize panel";
+  }
   
   // Clear form
   document.getElementById('entity-placement-form').reset();
-  const milSelect = document.getElementById("entity-mil-symbol-select");
-  if (milSelect) milSelect.value = "";
   updateEntityIconPreview("", NaN);
   document.getElementById('entity-coords').textContent = '--';
   const i2Fields = document.getElementById("entity-i2-fields");
@@ -4157,19 +4170,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   // Entity placement panel handlers
   const entityCategorySelect = document.getElementById('entity-category');
   const entityIconSelect = document.getElementById('entity-icon');
-  const entityMilSymbolSelect = document.getElementById('entity-mil-symbol-select');
   const entityI2TypeSelect = document.getElementById('entity-i2-type');
   const entityLabelInput = document.getElementById('entity-label');
   const entityForm = document.getElementById('entity-placement-form');
   const entityI2FieldsWrap = document.getElementById('entity-i2-fields');
   const entityPanelClose = document.getElementById('entity-panel-close');
+  const entityPanelMinimize = document.getElementById('entity-panel-minimize');
   const entityCancelBtn = document.getElementById('entity-cancel-btn');
   const entityImportFile = document.getElementById('entity-import-file');
   const entityImportRunBtn = document.getElementById('entity-import-run');
   const entityImportTemplateBtn = document.getElementById('entity-import-template');
   const entityImportClearBtn = document.getElementById('entity-import-clear');
   const entityImportPanel = document.querySelector('.entity-import-panel');
-  loadMilitarySymbolsCatalog().catch((err) => console.warn("Military symbol catalog load failed:", err));
   
   // Category change handler
   entityCategorySelect?.addEventListener('change', (e) => {
@@ -4204,14 +4216,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     updateEntityIconPreview(entityCategorySelect?.value || "", parseInt(entityIconSelect.value, 10));
   });
 
-  entityMilSymbolSelect?.addEventListener('change', () => {
-    const picked = getMilitarySelectionForPlacement(entityMilSymbolSelect.value);
-    if (picked) {
-      applyMilitarySelectionToForm(picked);
-      setStatus(`Military symbol selected: ${picked.sidc}`);
-    }
-  });
-
   entityI2FieldsWrap?.addEventListener('change', () => {
     const activeField = document.activeElement;
     if (activeField && activeField.matches && activeField.matches("[data-i2-property-id]")) {
@@ -4243,15 +4247,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     
     const rawLabel = entityLabelInput.value.trim();
-    let categoryKey = entityCategorySelect.value;
-    let iconIndex = parseInt(entityIconSelect.value, 10);
+    const categoryKey = entityCategorySelect.value;
+    const iconIndex = parseInt(entityIconSelect.value, 10);
     const latLng = window._pendingEntityLatLng;
-    const militarySelection = getMilitarySelectionForPlacement(entityMilSymbolSelect?.value || "");
-    if (militarySelection) {
-      applyMilitarySelectionToForm(militarySelection);
-      categoryKey = "military";
-      iconIndex = parseInt(entityIconSelect.value, 10);
-    }
     const i2EntityData = collectI2EntityFormData();
     if (!i2EntityData) {
       alert('Select an i2 entity type for this entity');
@@ -4306,6 +4304,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   
   // Close button handlers
+  entityPanelMinimize?.addEventListener('click', toggleEntityPanelMinimized);
   entityPanelClose?.addEventListener('click', closeEntityPanel);
   entityCancelBtn?.addEventListener('click', closeEntityPanel);
 

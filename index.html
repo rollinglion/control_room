@@ -145,7 +145,7 @@
           <strong>Entity Placement + i2 Workspace</strong>
           <p><strong>To place:</strong> Click a category below -> click on map -> enter details (name, address, notes)</p>
           <p><strong>To connect:</strong> Click Connect on any entity -> click target entity -> enter label</p>
-          <p>Icons auto-suggest based on i2 fields and entity content (including military SIDC/JMSML symbols).</p>
+          <p>Icons auto-suggest based on i2 fields and entity content.</p>
         </div>
 
         <div class="entity-import-panel">
@@ -449,7 +449,10 @@
   <div id="entity-placement-panel" class="entity-panel">
     <div class="entity-panel-header">
       <span class="entity-panel-title">PLACE ENTITY</span>
-      <button id="entity-panel-close" class="entity-panel-close-btn">&times;</button>
+      <div class="entity-panel-header-actions">
+        <button id="entity-panel-minimize" class="entity-panel-min-btn" type="button" title="Minimize panel">-</button>
+        <button id="entity-panel-close" class="entity-panel-close-btn" type="button" title="Close panel">&times;</button>
+      </div>
     </div>
     <div class="entity-panel-body">
       <form id="entity-placement-form">
@@ -470,11 +473,6 @@
           <img id="entity-icon-preview-img" src="" alt="Selected icon preview" />
           <span id="entity-icon-preview-label">No icon selected</span>
         </div>
-
-        <label for="entity-mil-symbol-select">Military Symbol (SIDC/JMSML, optional)</label>
-        <select id="entity-mil-symbol-select">
-          <option value="">Select military symbol...</option>
-        </select>
 
         <label for="entity-i2-type">i2 Entity Type</label>
         <select id="entity-i2-type">

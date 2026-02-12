@@ -1205,6 +1205,13 @@ body {
   animation: titleShimmer 4s ease infinite;
 }
 
+.entity-panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.entity-panel-min-btn,
 .entity-panel-close-btn {
   width: 28px;
   height: 28px;
@@ -1220,6 +1227,12 @@ body {
   padding: 0;
   line-height: 1;
   transition: all 0.15s;
+}
+
+.entity-panel-min-btn:hover {
+  background: rgba(99, 102, 241, 0.16);
+  border-color: rgba(99, 102, 241, 0.35);
+  color: #c4b5fd;
 }
 
 .entity-panel-close-btn:hover {
@@ -1246,6 +1259,15 @@ body {
 .entity-panel-body::-webkit-scrollbar-thumb {
   background: rgba(255,255,255,0.06);
   border-radius: 2px;
+}
+
+.entity-panel.minimized {
+  width: 240px;
+  max-height: none;
+}
+
+.entity-panel.minimized .entity-panel-body {
+  display: none;
 }
 
 #entity-placement-form label {
