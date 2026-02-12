@@ -45,7 +45,6 @@ const PLANE_SPRITE_FALLBACK = { col: 1, row: 2 };
 const UK_COUNTRY_KEYS = ["UNITED KINGDOM", "UK", "GREAT BRITAIN", "ENGLAND", "SCOTLAND", "WALES", "NORTHERN IRELAND"];
 const MILITARY_CALLSIGN_PREFIXES = ["RRR", "RCH", "ASY", "NATO", "QID", "MMF", "IAM", "CFC", "HAF", "BAF", "FAF", "USAF", "RAF"];
 const ADSB_LARGE_OR_HEAVY = new Set([3, 4, 5]);
-const UK_AOI = { lamin: 48.5, lamax: 61.5, lomin: -12.5, lomax: 6.0 };
 
 function pickPlaneSprite(altMetres) {
   if (altMetres == null || altMetres <= 0) return { col: 1, row: 0 };
@@ -114,17 +113,12 @@ function isLikelyPassengerOrLarge(flight) {
   return looksLikeAirlineCallsign(flight.callsign);
 }
 
-function isLatLonInUkAoi(lat, lon) {
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
-  return lat >= UK_AOI.lamin && lat <= UK_AOI.lamax && lon >= UK_AOI.lomin && lon <= UK_AOI.lomax;
-}
-
 function hasUkNexus(flight) {
   if (!flight) return false;
+  // UK nexus means route endpoint linkage, not just current position.
   if (isUkCountry(flight.originAirport?.country)) return true;
   if (isUkCountry(flight.destinationAirport?.country)) return true;
-  if (isUkCountry(flight.originCountry)) return true;
-  return isLatLonInUkAoi(flight.lat, flight.lon);
+  return false;
 }
 
 function classifyFlightType(flight) {

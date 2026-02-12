@@ -2002,6 +2002,68 @@ function createOrganisationMarker(latLng) {
   return L.marker(latLng, { icon: markerIcon });
 }
 
+function getOfficerEntityIconData() {
+  const people = ICON_CATEGORIES.people || {};
+  const personIcon = (people.icons || []).find((ic) => ic.id === "person") || (people.icons || [])[0];
+  return {
+    id: personIcon?.id || "person",
+    name: personIcon?.name || "Person",
+    icon: personIcon?.icon || people.defaultIcon || ICON_CATEGORIES.people?.defaultIcon,
+    categoryColor: people.color || "#8b5cf6",
+    categoryName: people.name || "People"
+  };
+}
+
+function buildOfficerI2EntityData(personData = {}) {
+  const personEntity = getI2EntityByKey("ET5") || getI2EntityByKey("Person");
+  const values = [];
+  if (personData.name) values.push({ propertyName: "Full Name", value: String(personData.name) });
+  if (personData.address) values.push({ propertyName: "Address String", value: String(personData.address) });
+  if (personData.postcode) values.push({ propertyName: "Post Code", value: String(personData.postcode) });
+  return {
+    entityId: personEntity?.entity_id || "ET5",
+    entityName: personEntity?.entity_name || "Person",
+    values
+  };
+}
+
+function registerOfficerMarkerAsEntity(marker, personData = {}) {
+  if (!marker) return null;
+  const nameKey = String(personData.name || "").trim().toLowerCase();
+  const postcodeKey = String(personData.postcode || "").trim().toUpperCase();
+  if (!nameKey) return null;
+  if (!window._officerEntityIndex) window._officerEntityIndex = {};
+  const dedupeKey = `${nameKey}|${postcodeKey}`;
+  const existingId = window._officerEntityIndex[dedupeKey];
+  if (existingId) {
+    const existing = getEntityById(existingId);
+    if (existing) {
+      marker._entityId = existingId;
+      return existingId;
+    }
+  }
+
+  const coords = normalizeLatLng(personData.latLng || marker.getLatLng());
+  if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return null;
+  const entityId = `officer_entity_${Date.now()}_${Math.random()}`;
+  const entity = {
+    id: entityId,
+    iconData: getOfficerEntityIconData(),
+    label: String(personData.name || "Person"),
+    address: String(personData.address || "").trim(),
+    notes: personData.notes ? String(personData.notes) : "",
+    latLng: coords,
+    marker,
+    i2EntityData: buildOfficerI2EntityData(personData),
+    sourceType: "officer"
+  };
+  marker._entityId = entityId;
+  window._mapEntities.push(entity);
+  window._officerEntityIndex[dedupeKey] = entityId;
+  updateDashboardCounts();
+  return entityId;
+}
+
 function bindCompanyEntityMarkerClick(marker) {
   if (!marker || marker._companyEntityClickBound) return;
   marker.on("click", function(e) {
@@ -2170,6 +2232,16 @@ function removeEntity(entityId) {
     const entity = window._mapEntities[idx];
     entitiesLayer.removeLayer(entity.marker);
     window._mapEntities.splice(idx, 1);
+    if (window._companyEntityIndex) {
+      Object.keys(window._companyEntityIndex).forEach((k) => {
+        if (window._companyEntityIndex[k] === entityId) delete window._companyEntityIndex[k];
+      });
+    }
+    if (window._officerEntityIndex) {
+      Object.keys(window._officerEntityIndex).forEach((k) => {
+        if (window._officerEntityIndex[k] === entityId) delete window._officerEntityIndex[k];
+      });
+    }
     setStatus('Entity removed');
     updateDashboardCounts();
   }
@@ -3586,23 +3658,35 @@ async function addPersonToMap(officerName, address, companies = []) {
     if (address.postal_code) addrParts.push(address.postal_code);
     const addrString = addrParts.join(', ');
     
-    // Create marker popup
-    const popup = `
-      <strong>${escapeHtml(officerName)}</strong>
-      <span class="popup-label">Type</span> <span class="popup-tag" style="background:rgba(167,139,250,0.15); color:#c4b5fd; border:1px solid rgba(167,139,250,0.3);">Person/Officer</span><br>
-      <span class="popup-label">Address</span> ${escapeHtml(addrString)}
-      ${companies.length > 0 ? `<br><span class="popup-label">${companies.length} compan${companies.length === 1 ? 'y' : 'ies'}</span>` : ''}
-    `;
-    
     const personLatLng = [coords.lat, coords.lon];
     
     const useCircle = window._useCircleMarkers !== false;
     const marker = createCustomMarker(personLatLng, 'person', 'officer', useCircle);
-    marker.bindPopup(popup).addTo(layers.companies);
+    marker.addTo(layers.companies);
+    const personEntityId = registerOfficerMarkerAsEntity(marker, {
+      name: officerName,
+      address: addrString,
+      postcode,
+      latLng: personLatLng,
+      notes: companies.length ? `${companies.length} related compan${companies.length === 1 ? "y" : "ies"}` : ""
+    });
+    const popup = personEntityId
+      ? buildEntityPopup(personEntityId, getEntityById(personEntityId))
+      : (
+        `<strong>${escapeHtml(officerName)}</strong>` +
+        `<span class="popup-label">Type</span> <span class="popup-tag" style="background:rgba(167,139,250,0.15); color:#c4b5fd; border:1px solid rgba(167,139,250,0.3);">Person/Officer</span><br>` +
+        `<span class="popup-label">Address</span> ${escapeHtml(addrString)}`
+      );
+    marker.bindPopup(popup);
     
     // Add click handler to highlight connections
     marker.on('click', function(e) {
       L.DomEvent.stopPropagation(e);
+      const entityId = marker._entityId;
+      if (connectionDrawingMode && entityId && connectionDrawingMode.fromId !== entityId) {
+        completeConnection(entityId);
+        return;
+      }
       highlightConnections(marker.getLatLng());
     });
     
@@ -3711,6 +3795,7 @@ function clearAll() {
   _searchAbort = true;
   if (confirm('Clear all companies from map?')) {
     removeCompanyEntitiesFromStore();
+    window._officerEntityIndex = {};
     layers.companies.clearLayers();
   }
   ["ch_name","ch_number","ch_postcode","ch_town","ch_status","ch_sic"].forEach(id => {
