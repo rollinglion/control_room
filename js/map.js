@@ -4591,7 +4591,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     const rawLabel = entityLabelInput.value.trim();
     const categoryKey = entityCategorySelect.value;
     const iconIndex = parseInt(entityIconSelect.value, 10);
-    const latLng = window._pendingEntityLatLng;
+    const editingEntityId = window._editingEntityId;
+    const editingEntity = editingEntityId ? getEntityById(editingEntityId) : null;
+    const latLng = editingEntity ? editingEntity.latLng : window._pendingEntityLatLng;
     const i2EntityData = collectI2EntityFormData();
     if (!i2EntityData) {
       alert('Select an i2 entity type for this entity');
@@ -4635,13 +4637,36 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     }
 
-    // Place the entity
+    if (editingEntity) {
+      editingEntity.label = label;
+      editingEntity.address = address;
+      editingEntity.notes = notes;
+      editingEntity.iconData = iconData;
+      editingEntity.i2EntityData = i2EntityData;
+      editingEntity.latLng = placementLatLng;
+
+      editingEntity.marker.setLatLng(placementLatLng);
+      editingEntity.marker.setIcon(L.icon({
+        iconUrl: iconData.icon,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      }));
+      editingEntity.marker.setPopupContent(buildEntityPopup(editingEntityId, editingEntity));
+      bindEntityHoverTooltip(editingEntity.marker, editingEntity);
+      refreshConnectionsForEntity(editingEntityId);
+      refreshEntitySelectionStyles();
+      map.panTo(placementLatLng);
+
+      closeEntityPanel();
+      setStatus(usedPostcodeGeo ? `Updated: ${label} (address/postcode geocoded)` : `Updated: ${label}`);
+      return;
+    }
+
+    // Place new entity
     placeEntity(placementLatLng, iconData, label, address, notes, i2EntityData);
     map.panTo(placementLatLng);
-    
-    // Close panel
     closeEntityPanel();
-    
     setStatus(usedPostcodeGeo ? `Placed: ${label} (address/postcode geocoded)` : `Placed: ${label}`);
   });
   
