@@ -242,7 +242,7 @@
           <span class="layer-name">Live Flights (OpenSky)</span>
         </label>
 
-        <details class="panel-disclosure layer-tool-block" data-layer-tools="flights" open>
+        <details class="panel-disclosure layer-tool-block" data-layer-tools="flights">
           <summary>Flight Intelligence Filters</summary>
           <div class="flight-intel-tools">
             <label for="flight-airport-q">Airport (IATA/ICAO/Name/City)</label>
@@ -382,6 +382,13 @@
           </div>
         </details>
 
+        <details class="panel-disclosure" id="system-health-panel" open>
+          <summary>System Health</summary>
+          <div id="system-health-results" class="system-health-results">
+            <div class="nr-empty">Checking hosted services...</div>
+          </div>
+        </details>
+
       </div>
 
       <!-- I2 Workspace Tab -->
@@ -487,6 +494,7 @@
   </div>
 
   <div id="map"></div>
+  <button id="mobile-panel-toggle" class="mobile-panel-toggle" type="button" title="Toggle control panel">Panel</button>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -515,6 +523,7 @@
   <script src="js/national_rail.js"></script>
   <script src="js/roads_live.js"></script>
   <script src="js/opensky.js"></script>
+  <script src="js/system_health.js"></script>
   <script src="js/i2_workspace.js"></script>
 
 </body>
