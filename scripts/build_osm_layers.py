@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -131,8 +132,13 @@ def write_geojson(gdf, path: Path) -> Dict[str, int]:
 
 
 def run_ogr_extract(src_pbf: Path, out_path: Path, layer: str, where: str, select: str) -> Dict[str, int]:
+    ogr2ogr = resolve_ogr2ogr()
+    ogr_env = build_ogr_env(ogr2ogr)
+    if out_path.exists():
+        out_path.unlink()
     cmd = [
-        "ogr2ogr",
+        ogr2ogr,
+        "-overwrite",
         "-f",
         "GeoJSON",
         str(out_path),
@@ -147,17 +153,55 @@ def run_ogr_extract(src_pbf: Path, out_path: Path, layer: str, where: str, selec
         "-where",
         where,
     ]
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, env=ogr_env)
     return {
         "features": -1,  # unknown without loading JSON; kept lightweight
         "bytes": int(out_path.stat().st_size),
     }
 
 
+def resolve_ogr2ogr() -> str:
+    direct = shutil.which("ogr2ogr")
+    if direct:
+        return direct
+
+    candidates = [
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "GDAL" / "ogr2ogr.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "QGIS 3.34.0" / "bin" / "ogr2ogr.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "QGIS 3.36.0" / "bin" / "ogr2ogr.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def build_ogr_env(ogr2ogr_path: str) -> dict:
+    env = os.environ.copy()
+    ogr_path = Path(ogr2ogr_path)
+    root = ogr_path.parent if ogr_path.name.lower() == "ogr2ogr.exe" else Path(r"C:\Program Files\GDAL")
+
+    gdal_data = root / "gdal-data"
+    if gdal_data.exists():
+        env.setdefault("GDAL_DATA", str(gdal_data))
+        osmconf = gdal_data / "osmconf.ini"
+        if osmconf.exists():
+            env.setdefault("OSM_CONFIG_FILE", str(osmconf))
+
+    proj_lib = root / "projlib"
+    if proj_lib.exists():
+        env.setdefault("PROJ_LIB", str(proj_lib))
+
+    plugin_dir = root / "gdalplugins"
+    if plugin_dir.exists():
+        env.setdefault("GDAL_DRIVER_PATH", str(plugin_dir))
+    return env
+
+
 def build_with_ogr(src_pbf: Path, out_dir: Path) -> dict:
-    if not shutil.which("ogr2ogr"):
+    if not resolve_ogr2ogr():
         raise SystemExit(
-            "ogr2ogr not found. Install GDAL first, e.g. `winget install OSGeo.GDAL`, "
+            "ogr2ogr not found. Install GDAL first, e.g. `winget install GISInternals.GDAL`, "
             "or use Python 3.11 + pyrosm backend."
         )
 
@@ -175,13 +219,13 @@ def build_with_ogr(src_pbf: Path, out_dir: Path) -> dict:
         "outputs": {},
     }
     manifest["outputs"]["major_roads"] = run_ogr_extract(
-        src_pbf, roads_path, "lines", roads_where, "name,ref,highway,maxspeed"
+        src_pbf, roads_path, "lines", roads_where, "name,highway,other_tags"
     )
     manifest["outputs"]["rail_lines"] = run_ogr_extract(
-        src_pbf, rail_path, "lines", rail_where, "name,operator,railway"
+        src_pbf, rail_path, "lines", rail_where, "name,railway,other_tags"
     )
     manifest["outputs"]["places"] = run_ogr_extract(
-        src_pbf, places_path, "points", places_where, "name,place,population"
+        src_pbf, places_path, "points", places_where, "name,place,ref,other_tags"
     )
     return manifest
 
@@ -266,17 +310,21 @@ def main() -> None:
         gpd, pd, OSM = import_pyrosm_stack()
         if gpd and pd and OSM:
             manifest = build_with_pyrosm(pbf, out_dir, args.simplify)
-        elif shutil.which("ogr2ogr"):
+        elif resolve_ogr2ogr():
             manifest = build_with_ogr(pbf, out_dir)
         else:
             raise SystemExit(
                 "No supported backend available.\n"
                 "- Option A: Python 3.11 + `pip install pyrosm geopandas shapely pyproj`\n"
-                "- Option B: install GDAL (`winget install OSGeo.GDAL`) and rerun with --backend ogr"
+                "- Option B: install GDAL (`winget install GISInternals.GDAL`) and rerun with --backend ogr"
             )
 
     manifest_path = out_dir / "manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    roads_path = out_dir / "gb_major_roads.geojson"
+    rail_path = out_dir / "gb_rail_lines.geojson"
+    places_path = out_dir / "gb_places.geojson"
 
     print("\nDone.")
     print(f"- {roads_path}")

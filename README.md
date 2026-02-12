@@ -72,8 +72,13 @@ python scripts/build_osm_layers.py --pbf "data/OS Map/great-britain-260211.osm.p
 
 Option B (Python 3.12 friendly, GDAL backend):
 ```bash
-winget install OSGeo.GDAL
+winget install GISInternals.GDAL
 python scripts/build_osm_layers.py --backend ogr --pbf "data/OS Map/great-britain-260211.osm.pbf" --out "data/osm_derived"
+```
+
+Automated one-shot setup:
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup_osm_backend.ps1
 ```
 
 This creates:
