@@ -963,6 +963,33 @@ async function downloadCompanyProfile(companyNumber, companyName) {
   setStatus(`Preview ready for ${companyName}. Use the right panel to download.`);
 }
 
+// Get officers for a company via API
+async function getOfficersForCompanyAPI(companyNumber) {
+  if (!companyNumber) return [];
+
+  const cacheKey = `officers_${companyNumber.toUpperCase()}`;
+  const cached = PSC_API.cache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < PSC_API.cacheTTL)) {
+    return cached.data;
+  }
+
+  try {
+    const response = await fetchCH(`/company/${encodeURIComponent(companyNumber)}/officers?items_per_page=100`);
+    if (!response.ok) {
+      if (response.status === 404) return [];
+      console.error("Officers API failed:", response.status);
+      return [];
+    }
+    const data = await response.json();
+    const items = Array.isArray(data?.items) ? data.items : [];
+    PSC_API.cache.set(cacheKey, { data: items, timestamp: Date.now() });
+    return items;
+  } catch (err) {
+    console.error("Officers API error:", err);
+    return [];
+  }
+}
+
 // ══════════════════════════════════════════════════════
 // UI FUNCTIONS
 // ══════════════════════════════════════════════════════
@@ -1012,15 +1039,31 @@ async function lookupCompanyOfficerRole(companyNumber, personName) {
   const person = normalizePersonName(personName);
   if (!company || !person) return "";
   try {
-    const response = await fetchCH(`/company/${encodeURIComponent(company)}/officers?items_per_page=100`);
-    if (!response.ok) return "";
-    const payload = await response.json();
-    const officers = Array.isArray(payload?.items) ? payload.items : [];
+    const officers = await getOfficersForCompanyAPI(company);
     const hit = officers.find((o) => normalizePersonName(o?.name) === person);
     return formatOfficerRole(hit?.officer_role || "");
   } catch (err) {
     console.warn("Officer role lookup failed:", err);
     return "";
+  }
+}
+
+async function lookupCompanyOfficerMatch(companyNumber, personName) {
+  const company = String(companyNumber || "").trim();
+  const person = normalizePersonName(personName);
+  if (!company || !person) return null;
+  try {
+    const officers = await getOfficersForCompanyAPI(company);
+    const hit = officers.find((o) => normalizePersonName(o?.name) === person);
+    if (!hit) return null;
+    return {
+      officerId: extractOfficerId(hit),
+      officerRole: formatOfficerRole(hit?.officer_role || ""),
+      officer: hit
+    };
+  } catch (err) {
+    console.warn("Officer match lookup failed:", err);
+    return null;
   }
 }
 
@@ -1059,6 +1102,29 @@ function toOfficerAddressFromPSC(psc) {
   };
 }
 
+function officerCanMap(officer) {
+  const addr = officer?.address || {};
+  return !!String(addr.postal_code || "").trim();
+}
+
+function extractOfficerId(officer) {
+  const path = String(officer?.links?.officer?.appointments || "").trim();
+  const match = path.match(/\/officers\/([^/]+)\/appointments/i);
+  return match ? match[1] : "";
+}
+
+function toOfficerAddress(officer) {
+  const addr = officer?.address || {};
+  return {
+    address_line_1: addr.address_line_1 || "",
+    address_line_2: addr.address_line_2 || "",
+    locality: addr.locality || "",
+    region: addr.region || "",
+    postal_code: addr.postal_code || "",
+    country: addr.country || ""
+  };
+}
+
 async function addPSCToMap(psc, companyNumber, companyName) {
   if (!pscCanMap(psc)) {
     alert("PSC record has no postcode/address suitable for mapping.");
@@ -1072,8 +1138,8 @@ async function addPSCToMap(psc, companyNumber, companyName) {
   const personName = String(psc?.name || "PSC");
   const officerAddress = toOfficerAddressFromPSC(psc);
   try {
-    const officerRole = await lookupCompanyOfficerRole(companyNumber, personName);
-    const relationship = derivePscRelationshipLabel(psc, officerRole);
+    const officerMatch = await lookupCompanyOfficerMatch(companyNumber, personName);
+    const relationship = derivePscRelationshipLabel(psc, officerMatch?.officerRole || "");
     const relationshipDetail = buildPscRelationshipDetail(psc);
     const companyEntity = typeof window.getCompanyEntityByNumber === "function"
       ? window.getCompanyEntityByNumber(companyNumber)
@@ -1083,12 +1149,56 @@ async function addPSCToMap(psc, companyNumber, companyName) {
       relationship,
       relationshipDetail,
       pscData: psc,
+      officerId: officerMatch?.officerId || "",
       anchorLatLng: companyEntity?.latLng || null
     });
     setStatus(`Added PSC to map: ${personName}`);
   } catch (err) {
     console.error("Add PSC to map failed:", err);
     alert("Could not add PSC to map.");
+  }
+}
+
+async function addOfficerToMap(officer, companyNumber, companyName) {
+  if (!officerCanMap(officer)) {
+    alert("Officer record has no postcode/address suitable for mapping.");
+    return;
+  }
+  const addFn = window.addPersonToMap;
+  if (typeof addFn !== "function") {
+    alert("Map add function is unavailable. Refresh and try again.");
+    return;
+  }
+  const officerName = String(officer?.name || officer?.title || "Officer");
+  const officerAddress = toOfficerAddress(officer);
+  const relationship = formatOfficerRole(officer?.officer_role || "") || "Officer";
+  const relationshipDetailParts = [];
+  if (officer?.appointed_on) relationshipDetailParts.push(`Appointed: ${officer.appointed_on}`);
+  if (officer?.resigned_on) relationshipDetailParts.push(`Resigned: ${officer.resigned_on}`);
+  const dob = formatPartialDobForDisplay(officer?.date_of_birth);
+  if (dob) relationshipDetailParts.push(`DOB: ${dob}`);
+  if (officer?.nationality) relationshipDetailParts.push(`Nationality: ${officer.nationality}`);
+  if (officer?.country_of_residence) relationshipDetailParts.push(`Residence: ${officer.country_of_residence}`);
+  const relationshipDetail = relationshipDetailParts.join(" | ");
+  const companyEntity = typeof window.getCompanyEntityByNumber === "function"
+    ? window.getCompanyEntityByNumber(companyNumber)
+    : null;
+  try {
+    await addFn(officerName, officerAddress, [companyName || `Company #${companyNumber}`], {
+      companyNumber,
+      relationship,
+      relationshipDetail,
+      officerId: extractOfficerId(officer),
+      dob: officer?.date_of_birth || "",
+      nationality: officer?.nationality || "",
+      countryOfResidence: officer?.country_of_residence || "",
+      officerRole: relationship,
+      anchorLatLng: companyEntity?.latLng || null
+    });
+    setStatus(`Added officer to map: ${officerName}`);
+  } catch (err) {
+    console.error("Add officer to map failed:", err);
+    alert("Could not add officer to map.");
   }
 }
 
@@ -1151,6 +1261,55 @@ function renderPSCCard(psc, companyNumber, companyName) {
   return card;
 }
 
+function renderOfficerCard(officer, companyNumber, companyName) {
+  const card = document.createElement("div");
+  card.className = "psc-card";
+
+  const officerName = String(officer?.name || officer?.title || "Officer");
+  const officerRole = formatOfficerRole(officer?.officer_role || "") || "Officer";
+  const dob = formatPartialDobForDisplay(officer?.date_of_birth);
+
+  let html = `
+    <div class="psc-card-header">
+      <div class="psc-name">${escapeHtml(officerName)}</div>
+      <span class="popup-tag psc-tag-individual">${escapeHtml(officerRole)}</span>
+    </div>
+  `;
+
+  if (dob || officer?.nationality || officer?.country_of_residence) {
+    html += `<div class="psc-detail">`;
+    if (dob) html += `<span class="psc-label">DOB:</span> ${escapeHtml(dob)} `;
+    if (officer?.nationality) html += `<span class="psc-label">Nationality:</span> ${escapeHtml(officer.nationality)} `;
+    if (officer?.country_of_residence) html += `<span class="psc-label">Country:</span> ${escapeHtml(officer.country_of_residence)}`;
+    html += `</div>`;
+  }
+  if (officer?.appointed_on) {
+    html += `<div class="psc-detail"><span class="psc-label">Appointed:</span> ${escapeHtml(officer.appointed_on)}</div>`;
+  }
+  if (officer?.resigned_on) {
+    html += `<div class="psc-detail"><span class="psc-label">Resigned:</span> ${escapeHtml(officer.resigned_on)}</div>`;
+  }
+
+  html += `<div class="popup-btn-row">`;
+  if (officerCanMap(officer)) {
+    html += `<button class="popup-psc-btn officer-add-map-btn" type="button">Add Officer to Map</button>`;
+  } else {
+    html += `<button class="popup-psc-btn" type="button" disabled title="No postcode available">Add Officer to Map</button>`;
+  }
+  html += `</div>`;
+
+  card.innerHTML = html;
+  const addBtn = card.querySelector(".officer-add-map-btn");
+  if (addBtn) {
+    addBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      addOfficerToMap(officer, companyNumber, companyName);
+    });
+  }
+  return card;
+}
+
 function displayPSCResults(container, pscData, companyNumber, companyName) {
   container.innerHTML = '';
   
@@ -1179,19 +1338,63 @@ function displayPSCResults(container, pscData, companyNumber, companyName) {
   });
 }
 
+function displayCompanyPeopleResults(container, pscData, officerData, companyNumber, companyName) {
+  container.innerHTML = "";
+
+  const summary = document.createElement("div");
+  summary.className = "psc-results-header";
+  summary.innerHTML = `
+    <div class="ch-result-count">
+      ${pscData.length} PSC${pscData.length === 1 ? "" : "s"} | ${officerData.length} Officer${officerData.length === 1 ? "" : "s"}
+    </div>
+    <button class="btn-download-pdf" onclick="downloadPSCReport('${escapeHtml(companyNumber)}', '${escapeHtml(companyName)}', window._currentPSCData)">
+      Download PSC PDF
+    </button>
+  `;
+  container.appendChild(summary);
+  window._currentPSCData = pscData;
+
+  const pscSection = document.createElement("div");
+  pscSection.innerHTML = `<div class="ch-result-count" style="margin-top:8px;">PSC</div>`;
+  if (pscData.length) {
+    pscData.forEach((psc) => pscSection.appendChild(renderPSCCard(psc, companyNumber, companyName)));
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "ch-result-count";
+    empty.textContent = "No PSC records found";
+    pscSection.appendChild(empty);
+  }
+  container.appendChild(pscSection);
+
+  const officerSection = document.createElement("div");
+  officerSection.innerHTML = `<div class="ch-result-count" style="margin-top:12px;">Officers</div>`;
+  if (officerData.length) {
+    officerData.forEach((officer) => officerSection.appendChild(renderOfficerCard(officer, companyNumber, companyName)));
+  } else {
+    const empty = document.createElement("div");
+    empty.className = "ch-result-count";
+    empty.textContent = "No officer records found";
+    officerSection.appendChild(empty);
+  }
+  container.appendChild(officerSection);
+}
+
 // View PSC for company (called from popup or elsewhere)
 async function viewCompanyPSC(companyNumber, companyName = '') {
   const resultsDiv = openPscQuickPanel(companyNumber, companyName) || document.getElementById("psc_results");
   const fallbackResultsDiv = document.getElementById("psc_results");
-  resultsDiv.innerHTML = '<div class="ch-loading">Loading PSC data from API...</div>';
+  resultsDiv.innerHTML = '<div class="ch-loading">Loading PSC and officer data from API...</div>';
   if (fallbackResultsDiv && fallbackResultsDiv !== resultsDiv) {
-    fallbackResultsDiv.innerHTML = '<div class="ch-loading">Loading PSC data from API...</div>';
+    fallbackResultsDiv.innerHTML = '<div class="ch-loading">Loading PSC and officer data from API...</div>';
   }
   showPscProgress();
-  setPscProgress("Fetching PSC records...", 50);
-  setStatus(`Loading PSC for company #${companyNumber}...`);
-  
-  const pscRecords = await getPSCForCompanyAPI(companyNumber);
+  setPscProgress("Fetching PSC and officer records...", 50);
+  setStatus(`Loading people for company #${companyNumber}...`);
+
+  const [pscRecords, officerRecords] = await Promise.all([
+    getPSCForCompanyAPI(companyNumber),
+    getOfficersForCompanyAPI(companyNumber)
+  ]);
   
   hidePscProgress();
   
@@ -1200,9 +1403,12 @@ async function viewCompanyPSC(companyNumber, companyName = '') {
     companyName = `Company #${companyNumber}`;
   }
   
-  displayPSCResults(resultsDiv, pscRecords, companyNumber, companyName);
+  displayCompanyPeopleResults(resultsDiv, pscRecords, officerRecords, companyNumber, companyName);
   if (fallbackResultsDiv && fallbackResultsDiv !== resultsDiv) {
-    displayPSCResults(fallbackResultsDiv, pscRecords, companyNumber, companyName);
+    displayCompanyPeopleResults(fallbackResultsDiv, pscRecords, officerRecords, companyNumber, companyName);
   }
-  setStatus(`${pscRecords.length} PSC record${pscRecords.length === 1 ? '' : 's'} for #${companyNumber}`);
+  setStatus(
+    `${pscRecords.length} PSC record${pscRecords.length === 1 ? "" : "s"}, ` +
+    `${officerRecords.length} officer record${officerRecords.length === 1 ? "" : "s"} for #${companyNumber}`
+  );
 }

@@ -2233,6 +2233,41 @@ function bindEntityHoverTooltip(marker, entity) {
 }
 
 function buildEntityPopup(entityId, entity) {
+  if (entity?.sourceType === "officer") {
+    const dob =
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Date of Birth", "DOB"]) ||
+      formatPartialDobValue(entity.dob || "");
+    const nationality = getI2ValueFromEntityValues(entity.i2EntityData, ["Nationality"]) || String(entity.nationality || "");
+    const countryOfResidence =
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Country of Residence"]) ||
+      String(entity.countryOfResidence || "");
+    const role =
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Role", "Officer Role"]) ||
+      String(entity.officerRole || "");
+    const detailRows = [];
+    if (entity.address) detailRows.push(`<span class="popup-label">Address</span> ${escapeHtml(entity.address)}`);
+    if (entity.notes) detailRows.push(`<span class="popup-label">Notes</span> ${escapeHtml(entity.notes)}`);
+    if (role) detailRows.push(`<span class="popup-label">Role</span> ${escapeHtml(role)}`);
+    detailRows.push(`<span class="popup-label">Lat/Lng</span> ${entity.latLng[0].toFixed(5)}, ${entity.latLng[1].toFixed(5)}`);
+    return `
+      <strong>${escapeHtml(entity.label)}</strong>
+      <span class="popup-label">Type</span> <span class="popup-tag" style="background:${entity.iconData.categoryColor || entity.iconData.color};">${escapeHtml(entity.iconData.categoryName || entity.iconData.name)}</span><br>
+      ${dob ? `<span class="popup-label">DOB</span> ${escapeHtml(dob)}<br>` : ""}
+      ${nationality ? `<span class="popup-label">Nationality</span> ${escapeHtml(nationality)}<br>` : ""}
+      ${countryOfResidence ? `<span class="popup-label">Country of Residence</span> ${escapeHtml(countryOfResidence)}<br>` : ""}
+      <details class="popup-more-details">
+        <summary>See more</summary>
+        ${detailRows.join("<br>")}
+      </details>
+      ${formatI2EntitySummary(entity.i2EntityData)}
+      <div class="popup-btn-row">
+        <button class="popup-psc-btn" onclick="editEntity('${entityId}')">Edit</button>
+        <button class="popup-psc-btn" onclick="drawConnectionFrom('${entityId}')">Connect</button>
+        ${entity.officerId ? `<button class="popup-psc-btn" onclick="expandOfficerCompanies('${entityId}')">Expand Companies</button>` : ""}
+        <button class="popup-psc-btn" onclick="removeEntity('${entityId}')">Remove</button>
+      </div>
+    `;
+  }
   return `
     <strong>${escapeHtml(entity.label)}</strong>
     <span class="popup-label">Type</span> <span class="popup-tag" style="background:${entity.iconData.categoryColor || entity.iconData.color};">${escapeHtml(entity.iconData.categoryName || entity.iconData.name)}</span><br>
@@ -2327,6 +2362,13 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
   if (existingId) {
     const existing = getEntityById(existingId);
     if (existing) {
+      if (!existing.officerId && personData.officerId) existing.officerId = personData.officerId;
+      if (!existing.countryOfResidence && personData.countryOfResidence) existing.countryOfResidence = personData.countryOfResidence;
+      if (!existing.nationality && personData.nationality) existing.nationality = personData.nationality;
+      if (!existing.dob && personData.dob) existing.dob = personData.dob;
+      if (!existing.officerRole && personData.relationship) existing.officerRole = personData.relationship;
+      if (!existing.notes && personData.notes) existing.notes = String(personData.notes);
+      marker.bindPopup(buildEntityPopup(existingId, existing));
       marker._entityId = existingId;
       bindEntityHoverTooltip(marker, existing);
       return existingId;
@@ -2347,7 +2389,10 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
     i2EntityData: buildOfficerI2EntityData(personData),
     sourceType: "officer",
     dob: personData.dob || "",
-    nationality: personData.nationality || ""
+    nationality: personData.nationality || "",
+    countryOfResidence: personData.countryOfResidence || "",
+    officerId: personData.officerId || "",
+    officerRole: personData.relationship || ""
   };
   marker._entityId = entityId;
   bindEntityHoverTooltip(marker, entity);
@@ -2631,6 +2676,7 @@ window.registerCompanyMarkerAsEntity = registerCompanyMarkerAsEntity;
 window.connectCompanyEntity = connectCompanyEntity;
 window.createOrganisationMarker = createOrganisationMarker;
 window.addPersonToMap = addPersonToMap;
+window.expandOfficerCompanies = expandOfficerCompanies;
 window.getCompanyEntityByNumber = getCompanyEntityByNumber;
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -4160,8 +4206,9 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
       notes: companies.length ? `${companies.length} related compan${companies.length === 1 ? "y" : "ies"}` : "",
       dob: options?.pscData?.date_of_birth || options?.dob || "",
       nationality: options?.pscData?.nationality || options?.nationality || "",
-      countryOfResidence: options?.pscData?.country_of_residence || "",
-      relationship: options?.relationship || ""
+      countryOfResidence: options?.pscData?.country_of_residence || options?.countryOfResidence || "",
+      relationship: options?.relationship || options?.officerRole || "",
+      officerId: options?.officerId || ""
     });
     const popup = personEntityId
       ? buildEntityPopup(personEntityId, getEntityById(personEntityId))
@@ -4226,6 +4273,47 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
     alert('Failed to add person to map');
     setStatus('Error');
     return null;
+  }
+}
+
+async function expandOfficerCompanies(entityId) {
+  const entity = getEntityById(entityId);
+  if (!entity) return;
+  const officerId = String(entity.officerId || "").trim();
+  if (!officerId) {
+    alert("No officer ID is stored for this person, so appointments cannot be expanded.");
+    return;
+  }
+  setStatus(`Loading appointments for ${entity.label}...`);
+  try {
+    const appointments = typeof getOfficerAppointmentsAPI === "function"
+      ? await getOfficerAppointmentsAPI(officerId)
+      : [];
+    if (!Array.isArray(appointments) || appointments.length === 0) {
+      setStatus(`No company appointments found for ${entity.label}`);
+      return;
+    }
+    let added = 0;
+    for (const appt of appointments) {
+      const companyNumber = String(appt?.appointed_to?.company_number || "").trim();
+      const companyName = String(appt?.appointed_to?.company_name || "").trim();
+      if (!companyNumber || !companyName) continue;
+      await addCompanyToMap(
+        companyNumber,
+        companyName,
+        entity.label,
+        entity.latLng,
+        {
+          officer_role: String(appt?.officer_role || entity.officerRole || "Officer"),
+          appointed_on: String(appt?.appointed_on || "")
+        }
+      );
+      added += 1;
+    }
+    setStatus(`Expanded ${added} linked compan${added === 1 ? "y" : "ies"} for ${entity.label}`);
+  } catch (err) {
+    console.error("Expand officer companies failed:", err);
+    setStatus("Failed to expand officer companies");
   }
 }
 
