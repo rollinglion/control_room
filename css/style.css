@@ -16,14 +16,17 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: 'Space Grotesk', 'Segoe UI', sans-serif; }
+html, body { margin: 0; padding: 0; height: 100%; min-height: 100dvh; font-family: 'Space Grotesk', 'Segoe UI', sans-serif; }
 body {
+  overflow: hidden;
+  overscroll-behavior: none;
   background:
     radial-gradient(1000px 520px at 8% 12%, rgba(6, 182, 212, 0.08), transparent 62%),
     radial-gradient(900px 460px at 92% 88%, rgba(45, 212, 191, 0.07), transparent 60%),
     #04080d;
 }
-#map { position: absolute; inset: 0; }
+#map { position: absolute; inset: 0; width: 100vw; height: 100dvh; }
+.leaflet-container { touch-action: pan-x pan-y; }
 
 /* ── Dark tile readability boost ──
    Brighten dark tiles so roads/labels are legible */
@@ -42,7 +45,7 @@ body {
   font-size: 13px;
   backdrop-filter: blur(20px);
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.62), 0 0 0 1px rgba(45,212,191,0.06) inset;
-  max-height: calc(100vh - 60px);
+  max-height: calc(100dvh - 60px);
   display: flex; flex-direction: column;
 }
 
@@ -355,7 +358,7 @@ body {
   right: 12px;
   z-index: 1200;
   width: min(520px, calc(100vw - 24px));
-  height: calc(100vh - 72px);
+  height: calc(100dvh - 72px);
   background: rgba(7, 16, 23, 0.97);
   border: 1px solid rgba(45, 212, 191, 0.22);
   border-radius: 12px;
@@ -434,7 +437,7 @@ body {
   right: 12px;
   z-index: 1190;
   width: min(460px, calc(100vw - 24px));
-  max-height: calc(100vh - 72px);
+  max-height: calc(100dvh - 72px);
   background: rgba(7, 16, 23, 0.97);
   border: 1px solid rgba(45, 212, 191, 0.22);
   border-radius: 12px;
@@ -1272,7 +1275,7 @@ body {
   color: #cbd5e1;
   backdrop-filter: blur(20px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.04) inset;
-  max-height: calc(100vh - 24px);
+  max-height: calc(100dvh - 24px);
   display: flex;
   flex-direction: column;
   transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -2884,11 +2887,31 @@ button.flight-filter-item span {
 }
 
 @media (max-width: 920px) {
+  .mobile-panel-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    position: absolute;
+    z-index: 1200;
+    right: max(9px, env(safe-area-inset-right));
+    bottom: max(10px, env(safe-area-inset-bottom));
+    min-width: 72px;
+    min-height: 38px;
+    border: 1px solid rgba(45,212,191,0.35);
+    border-radius: 999px;
+    background: rgba(7,16,23,0.92);
+    color: #d6e3ef;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+  }
+
   #control-panel {
-    width: calc(100vw - 18px);
-    left: 9px;
-    top: 9px;
-    max-height: 54vh;
+    width: calc(100vw - max(18px, env(safe-area-inset-left) + env(safe-area-inset-right) + 18px));
+    left: max(9px, env(safe-area-inset-left));
+    top: max(9px, env(safe-area-inset-top));
+    max-height: 60dvh;
   }
 
   #control-panel.control-panel-layers-docked {
@@ -2910,9 +2933,19 @@ button.flight-filter-item span {
 
   .flight-info-panel {
     width: calc(100vw - 18px);
-    right: 9px;
+    right: max(9px, env(safe-area-inset-right));
     top: auto;
-    bottom: 65px;
+    bottom: max(65px, env(safe-area-inset-bottom) + 52px);
+  }
+
+  #control-panel.mobile-hidden {
+    transform: translateY(calc(100dvh + 36px));
+    pointer-events: none;
+    transition: transform 0.2s ease;
+  }
+
+  #control-panel {
+    transition: transform 0.2s ease;
   }
 
   #status-bar {
@@ -3017,32 +3050,34 @@ button.flight-filter-item span {
   }
 
   .mobile-panel-toggle {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    position: absolute;
-    z-index: 1200;
-    right: 10px;
-    bottom: 10px;
-    min-width: 68px;
-    min-height: 36px;
-    border: 1px solid rgba(45,212,191,0.35);
-    border-radius: 999px;
-    background: rgba(7,16,23,0.92);
-    color: #d6e3ef;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.5px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.45);
+    right: max(8px, env(safe-area-inset-right));
+    bottom: max(8px, env(safe-area-inset-bottom));
+    min-width: 66px;
+    min-height: 34px;
   }
 
   #control-panel.mobile-hidden {
-    transform: translateY(calc(100% + 20px));
+    transform: translateY(calc(100dvh + 36px));
+    pointer-events: none;
     transition: transform 0.2s ease;
   }
 
   #control-panel {
     transition: transform 0.2s ease;
+  }
+
+  .leaflet-popup-content-wrapper {
+    max-width: min(92vw, 360px) !important;
+  }
+
+  .leaflet-popup-content {
+    margin: 10px 12px !important;
+    line-height: 1.55 !important;
+  }
+
+  .airport-logo-popup {
+    max-width: min(76vw, 220px);
+    max-height: 96px;
   }
 }
 

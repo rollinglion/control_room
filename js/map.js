@@ -5954,10 +5954,56 @@ document.addEventListener("DOMContentLoaded", async () => {
   const pscClearBtn = document.getElementById("psc_clear");
   const toggleBtn  = document.getElementById("cp-toggle");
   const body       = document.getElementById("cp-body");
+  const controlPanel = document.getElementById("control-panel");
+  const mobilePanelToggle = document.getElementById("mobile-panel-toggle");
+  const mobileViewport = window.matchMedia("(max-width: 920px)");
+  let mobilePanelHidden = false;
   const inputs = ["ch_name","ch_number","ch_postcode","ch_town"]
     .map(id => document.getElementById(id)).filter(Boolean);
   const pscInputs = ["psc_name","psc_company"]
     .map(id => document.getElementById(id)).filter(Boolean);
+
+  function applyMobilePanelState(hidden) {
+    if (!controlPanel || !mobilePanelToggle) return;
+    mobilePanelHidden = !!hidden;
+    const shouldHide = mobileViewport.matches && mobilePanelHidden;
+    controlPanel.classList.toggle("mobile-hidden", shouldHide);
+    mobilePanelToggle.textContent = shouldHide ? "Panel" : "Hide";
+    mobilePanelToggle.setAttribute("aria-expanded", shouldHide ? "false" : "true");
+    mobilePanelToggle.setAttribute("title", shouldHide ? "Show control panel" : "Hide control panel");
+  }
+
+  function syncMobileViewportLayout() {
+    if (!controlPanel || !mobilePanelToggle) return;
+    if (mobileViewport.matches) {
+      if (!mobilePanelToggle.dataset.mobileInitDone) {
+        mobilePanelToggle.dataset.mobileInitDone = "1";
+        mobilePanelHidden = true;
+      }
+      applyMobilePanelState(mobilePanelHidden);
+    } else {
+      mobilePanelHidden = false;
+      controlPanel.classList.remove("mobile-hidden");
+      mobilePanelToggle.textContent = "Panel";
+      mobilePanelToggle.setAttribute("aria-expanded", "true");
+      mobilePanelToggle.setAttribute("title", "Toggle control panel");
+    }
+    map.invalidateSize(false);
+  }
+
+  mobilePanelToggle?.addEventListener("click", () => {
+    applyMobilePanelState(!mobilePanelHidden);
+    map.invalidateSize(false);
+  });
+
+  mobileViewport.addEventListener("change", syncMobileViewportLayout);
+  syncMobileViewportLayout();
+
+  map.on("click", () => {
+    if (!mobileViewport.matches || mobilePanelHidden) return;
+    if (window._placementMode || entityBoxSelectMode) return;
+    applyMobilePanelState(true);
+  });
 
   // â”€â”€ Panel collapse â”€â”€
   toggleBtn?.addEventListener("click", () => {
