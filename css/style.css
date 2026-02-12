@@ -1182,6 +1182,41 @@ body {
   background-color: rgba(129, 140, 248, 0.9);
 }
 
+.entity-cluster-icon .entity-cluster-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.05;
+  padding-top: 2px;
+}
+
+.entity-cluster-icon .entity-cluster-count {
+  font-weight: 800;
+  font-size: 13px;
+  color: #ffffff;
+}
+
+.entity-cluster-icon .entity-cluster-title {
+  margin-top: 1px;
+  max-width: 72px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 9px;
+  color: #dbeafe;
+}
+
+.entity-cluster-icon .entity-cluster-subtitle {
+  max-width: 72px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 8px;
+  color: #bfdbfe;
+  opacity: 0.95;
+}
+
 /* Map Crosshair Cursor */
 .leaflet-container.leaflet-crosshair {
   cursor: crosshair !important;

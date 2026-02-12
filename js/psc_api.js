@@ -1146,6 +1146,7 @@ async function addPSCToMap(psc, companyNumber, companyName) {
       : null;
     await addFn(personName, officerAddress, [companyName || `Company #${companyNumber}`], {
       companyNumber,
+      companyName: companyName || "",
       relationship,
       relationshipDetail,
       pscData: psc,
@@ -1186,6 +1187,7 @@ async function addOfficerToMap(officer, companyNumber, companyName) {
   try {
     await addFn(officerName, officerAddress, [companyName || `Company #${companyNumber}`], {
       companyNumber,
+      companyName: companyName || "",
       relationship,
       relationshipDetail,
       officerId: extractOfficerId(officer),

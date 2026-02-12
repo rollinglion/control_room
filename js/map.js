@@ -515,6 +515,77 @@ const companyCluster = L.markerClusterGroup({
   animateAddingMarkers: true
 });
 
+function getEntityForClusterMarker(marker) {
+  const entityId = marker?._entityId;
+  if (!entityId) return null;
+  return getEntityById(entityId) || null;
+}
+
+function getEntityClusterDescriptor(cluster) {
+  const markers = cluster?.getAllChildMarkers ? cluster.getAllChildMarkers() : [];
+  if (!markers.length) return { title: "", subtitle: "" };
+
+  const companyCounts = new Map();
+  let fallback = null;
+
+  markers.forEach((m) => {
+    const entity = getEntityForClusterMarker(m);
+    if (!entity) return;
+    if (!fallback) fallback = entity;
+
+    const companyName =
+      String(entity.companyName || "").trim() ||
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Organisation Name"]);
+    const companyNumber =
+      String(entity.companyNumber || "").trim() ||
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Company/Registration Number", "Company Number", "Registration Number"]);
+
+    if (companyName || companyNumber) {
+      const key = `${companyName}|${companyNumber}`;
+      const prev = companyCounts.get(key) || { count: 0, name: companyName, number: companyNumber };
+      prev.count += 1;
+      companyCounts.set(key, prev);
+    }
+  });
+
+  let top = null;
+  companyCounts.forEach((v) => {
+    if (!top || v.count > top.count) top = v;
+  });
+  if (top) {
+    return {
+      title: String(top.name || "Company"),
+      subtitle: top.number ? `#${top.number}` : ""
+    };
+  }
+
+  if (fallback) {
+    const typeTag = fallback.i2EntityData?.entityName || fallback.iconData?.categoryName || fallback.iconData?.name || "Entity";
+    return { title: String(fallback.label || "Entity"), subtitle: String(typeTag) };
+  }
+  return { title: "", subtitle: "" };
+}
+
+function createEntityClusterIcon(cluster) {
+  const count = cluster.getChildCount();
+  const sizeClass = count < 10 ? "small" : count < 50 ? "medium" : "large";
+  const descriptor = getEntityClusterDescriptor(cluster);
+  const title = escapeHtml(descriptor.title || "");
+  const subtitle = escapeHtml(descriptor.subtitle || "");
+  const html = `
+    <div class="entity-cluster-content">
+      <span class="entity-cluster-count">${count}</span>
+      ${title ? `<span class="entity-cluster-title">${title}</span>` : ""}
+      ${subtitle ? `<span class="entity-cluster-subtitle">${subtitle}</span>` : ""}
+    </div>
+  `;
+  return L.divIcon({
+    html,
+    className: `marker-cluster marker-cluster-${sizeClass} entity-cluster-icon`,
+    iconSize: L.point(56, 56)
+  });
+}
+
 // â”€â”€ Connection Lines Layer â”€â”€
 const connectionsLayer = L.layerGroup();
 
@@ -527,7 +598,8 @@ const entitiesMarkerCluster = L.markerClusterGroup({
   disableClusteringAtZoom: 14,
   spiderfyDistanceMultiplier: 1.4,
   animate: true,
-  animateAddingMarkers: true
+  animateAddingMarkers: true,
+  iconCreateFunction: createEntityClusterIcon
 });
 const entitiesOverlayLayer = L.layerGroup();
 const entitiesLayer = L.layerGroup([entitiesMarkerCluster, entitiesOverlayLayer]);
@@ -2367,6 +2439,8 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
       if (!existing.nationality && personData.nationality) existing.nationality = personData.nationality;
       if (!existing.dob && personData.dob) existing.dob = personData.dob;
       if (!existing.officerRole && personData.relationship) existing.officerRole = personData.relationship;
+      if (!existing.companyName && personData.companyName) existing.companyName = String(personData.companyName);
+      if (!existing.companyNumber && personData.companyNumber) existing.companyNumber = String(personData.companyNumber);
       if (!existing.notes && personData.notes) existing.notes = String(personData.notes);
       marker.bindPopup(buildEntityPopup(existingId, existing));
       marker._entityId = existingId;
@@ -2392,7 +2466,9 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
     nationality: personData.nationality || "",
     countryOfResidence: personData.countryOfResidence || "",
     officerId: personData.officerId || "",
-    officerRole: personData.relationship || ""
+    officerRole: personData.relationship || "",
+    companyName: personData.companyName ? String(personData.companyName) : "",
+    companyNumber: personData.companyNumber ? String(personData.companyNumber) : ""
   };
   marker._entityId = entityId;
   bindEntityHoverTooltip(marker, entity);
@@ -4277,6 +4353,7 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
     if (address.locality) addrParts.push(address.locality);
     if (address.postal_code) addrParts.push(address.postal_code);
     const addrString = addrParts.join(', ');
+    const resolvedCompanyName = String(options?.companyName || companies?.[0] || "").trim();
     
     let personLatLng = [coords.lat, coords.lon];
     const linkedCompanyEntity = options.companyNumber ? getCompanyEntityByNumber(options.companyNumber) : null;
@@ -4308,7 +4385,9 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
       nationality: options?.pscData?.nationality || options?.nationality || "",
       countryOfResidence: options?.pscData?.country_of_residence || options?.countryOfResidence || "",
       relationship: options?.relationship || options?.officerRole || "",
-      officerId: options?.officerId || ""
+      officerId: options?.officerId || "",
+      companyName: resolvedCompanyName,
+      companyNumber: options?.companyNumber || ""
     });
     const popup = personEntityId
       ? buildEntityPopup(personEntityId, getEntityById(personEntityId))
