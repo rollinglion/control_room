@@ -2482,6 +2482,19 @@ body {
   filter: drop-shadow(0 0 6px rgba(249,115,22,0.3));
 }
 
+.os-road-line-interactive {
+  cursor: pointer;
+  transition: opacity 0.18s ease, stroke-width 0.18s ease, filter 0.18s ease;
+}
+
+.os-road-line-selected {
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.82)) drop-shadow(0 0 13px rgba(249,115,22,0.65));
+}
+
+.os-road-line-dimmed {
+  filter: drop-shadow(0 0 3px rgba(249,115,22,0.2));
+}
+
 .os-road-static-connector {
   stroke-linecap: round;
   stroke-linejoin: round;

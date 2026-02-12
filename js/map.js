@@ -4288,6 +4288,8 @@ const OS_DERIVED_STATE = {
   railRenderSig: "",
   roadsStaticRenderSig: "",
   railStaticRenderSig: "",
+  roadsSelectedLineKey: "",
+  roadsRenderedSegments: [],
   railSelectedLineKey: "",
   railRenderedSegments: []
 };
@@ -4335,6 +4337,18 @@ const OS_ROAD_BASE_COLOURS = {
   secondary: "#d97706",
   tertiary: "#fb923c"
 };
+const OS_ROAD_LINE_PALETTE = [
+  "#ef4444",
+  "#f97316",
+  "#f59e0b",
+  "#eab308",
+  "#22c55e",
+  "#14b8a6",
+  "#0ea5e9",
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899"
+];
 const OS_RAIL_LINE_PALETTE = [
   "#2563eb",
   "#ef4444",
@@ -4373,6 +4387,14 @@ function tweakHexColor(hex, delta = 0) {
 
 function osRoadColorForFeature(properties = {}) {
   const highway = String(properties.highway || "").toLowerCase();
+  const name = String(properties.name || "").trim().toLowerCase();
+  if (name) {
+    const hashed = OS_ROAD_LINE_PALETTE[hashStringToInt(`${highway}|${name}`) % OS_ROAD_LINE_PALETTE.length];
+    if (highway === "motorway") return tweakHexColor(hashed, 10);
+    if (highway === "trunk") return tweakHexColor(hashed, 6);
+    if (highway === "primary") return tweakHexColor(hashed, 2);
+    return tweakHexColor(hashed, -2);
+  }
   const base = OS_ROAD_BASE_COLOURS[highway] || "#fb923c";
   return tweakHexColor(base, 8);
 }
@@ -4613,6 +4635,28 @@ function buildRailGapConnectors(routes = [], maxGapKm = 0.12) {
   return out;
 }
 
+function normalizeRoadLineKey(type = "", name = "") {
+  const t = String(type || "").trim().toLowerCase();
+  const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
+  return `${t}|${n}`;
+}
+
+function buildRoadGapConnectors(routes = [], maxGapKm = 0.1) {
+  const out = [];
+  const byRoad = new Map();
+  for (const r of routes || []) {
+    const key = normalizeRoadLineKey(r?.type, r?.name);
+    if (!key || key.endsWith("|")) continue;
+    if (!byRoad.has(key)) byRoad.set(key, []);
+    byRoad.get(key).push(r);
+  }
+  for (const group of byRoad.values()) {
+    if (!Array.isArray(group) || group.length < 2) continue;
+    out.push(...buildEndpointConnectors(group, maxGapKm));
+  }
+  return out;
+}
+
 function routeLengthKm(coords = []) {
   if (!Array.isArray(coords) || coords.length < 2) return 0;
   let total = 0;
@@ -4622,6 +4666,96 @@ function routeLengthKm(coords = []) {
   }
   return total;
 }
+
+function buildRoadLineLengthTotals(routes = []) {
+  const totals = new Map();
+  for (const r of routes || []) {
+    const coords = Array.isArray(r?.coords) ? r.coords : [];
+    if (coords.length < 2) continue;
+    const key = normalizeRoadLineKey(r?.type, r?.name);
+    if (!key || key.endsWith("|")) continue;
+    const km = routeLengthKm(coords);
+    totals.set(key, (totals.get(key) || 0) + km);
+  }
+  return totals;
+}
+
+function buildOsRoadLinePopupHtml(route = {}, lineKey = "", totalKm = 0) {
+  const safeName = String(route?.name || "Unnamed Road");
+  const safeType = String(route?.type || "road");
+  const segKm = routeLengthKm(Array.isArray(route?.coords) ? route.coords : []);
+  const selected = String(OS_DERIVED_STATE.roadsSelectedLineKey || "") === String(lineKey || "");
+  const encodedKey = encodeURIComponent(String(lineKey || ""));
+  const actionButton = selected
+    ? `<button class="popup-psc-btn" type="button" onclick="clearOsRoadLineSelection()">Clear Focus</button>`
+    : `<button class="popup-psc-btn" type="button" onclick="selectOsRoadLine('${encodedKey}')">Focus This Road</button>`;
+  return (
+    `<strong>${escapeHtml(safeName)}</strong><br>` +
+    `<span class="popup-label">Type</span> ${escapeHtml(safeType)}<br>` +
+    `<span class="popup-label">Route Length</span> ${Number(totalKm || 0).toFixed(1)} km<br>` +
+    `<span class="popup-label">Visible Segment</span> ${Number(segKm || 0).toFixed(2)} km<br>` +
+    `<span class="popup-label">Priority</span> ${selected ? "Focused" : "Default (longest routes drawn on top)"}<br>` +
+    `<div class="cp-btn-row" style="margin-top:8px;">${actionButton}</div>`
+  );
+}
+
+function applyOsRoadSelectionStyles() {
+  const segments = Array.isArray(OS_DERIVED_STATE.roadsRenderedSegments) ? OS_DERIVED_STATE.roadsRenderedSegments : [];
+  if (!segments.length) return;
+  const selectedKey = String(OS_DERIVED_STATE.roadsSelectedLineKey || "");
+  let minTotal = Infinity;
+  let maxTotal = 0;
+  for (const seg of segments) {
+    const t = Number(seg?.totalKm || 0);
+    if (!Number.isFinite(t)) continue;
+    minTotal = Math.min(minTotal, t);
+    maxTotal = Math.max(maxTotal, t);
+  }
+  if (!Number.isFinite(minTotal)) minTotal = 0;
+  const span = Math.max(0.0001, maxTotal - minTotal);
+
+  for (const seg of segments) {
+    const layer = seg?.layer;
+    if (!layer || typeof layer.setStyle !== "function") continue;
+    const totalKm = Number(seg?.totalKm || 0);
+    const baseWeight = Number(seg?.baseWeight || 3);
+    const hasSelection = !!selectedKey;
+    const selected = hasSelection && String(seg?.lineKey || "") === selectedKey;
+    const rank = Math.max(0, Math.min(1, (totalKm - minTotal) / span));
+
+    let opacity = 0.62 + (rank * 0.3);
+    let weight = baseWeight + (rank * 0.55);
+    if (hasSelection) {
+      opacity = selected ? 0.98 : 0.22;
+      weight = selected ? (baseWeight + 1.9) : Math.max(1.7, baseWeight - 1.0);
+    }
+    layer.setStyle({ opacity, weight });
+    if (layer._path) {
+      layer._path.classList.remove("os-road-line-selected", "os-road-line-dimmed");
+      if (hasSelection && selected) layer._path.classList.add("os-road-line-selected");
+      if (hasSelection && !selected) layer._path.classList.add("os-road-line-dimmed");
+    }
+    if (hasSelection && selected && typeof layer.bringToFront === "function") layer.bringToFront();
+  }
+}
+
+window.selectOsRoadLine = function selectOsRoadLine(encodedLineKey = "") {
+  let lineKey = String(encodedLineKey || "");
+  try {
+    lineKey = decodeURIComponent(lineKey);
+  } catch (_) {
+    // keep raw value
+  }
+  OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
+  applyOsRoadSelectionStyles();
+  if (lineKey) setStatus(`OS roads focus: ${lineKey}`);
+};
+
+window.clearOsRoadLineSelection = function clearOsRoadLineSelection() {
+  OS_DERIVED_STATE.roadsSelectedLineKey = "";
+  applyOsRoadSelectionStyles();
+  setStatus("OS roads focus cleared");
+};
 
 function buildRailLineLengthTotals(routes = []) {
   const totals = new Map();
@@ -4932,13 +5066,24 @@ function renderOsRoadOverlayViewport() {
     style: (f) => ({
       color: osRoadColorForFeature(f.properties || {}),
       weight: zoom <= 8 ? 1.4 : 1.9,
-      opacity: zoom <= 8 ? 0.55 : 0.72
+      opacity: zoom <= 8 ? 0.55 : 0.72,
+      className: "os-road-static-line os-road-line-interactive"
     }),
     onEachFeature: (f, l) => {
-      if (zoom < 9) return;
       const name = f.properties?.name || "Major Road";
       const type = f.properties?.highway || "";
-      l.bindTooltip(`${escapeHtml(name)}${type ? ` (${escapeHtml(type)})` : ""}`, { sticky: true, opacity: 0.85 });
+      const coords = f.geometry?.type === "LineString"
+        ? (f.geometry.coordinates || []).map((p) => [Number(p?.[1]), Number(p?.[0])]).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]))
+        : [];
+      const segKm = routeLengthKm(coords);
+      l.bindPopup(
+        `<strong>${escapeHtml(name)}</strong><br>` +
+        `<span class="popup-label">Type</span> ${escapeHtml(type || "road")}<br>` +
+        `<span class="popup-label">Visible Segment</span> ${segKm.toFixed(2)} km`
+      );
+      if (zoom >= 9) {
+        l.bindTooltip(`${escapeHtml(name)}${type ? ` (${escapeHtml(type)})` : ""}`, { sticky: true, opacity: 0.85 });
+      }
     }
   }).addTo(OS_DERIVED_STATE.roadsLayer);
 }
@@ -4995,37 +5140,70 @@ function renderStaticRoadOverlay() {
   const bounds = getExpandedBounds(0.5);
   const zoom = map.getZoom();
   OS_DERIVED_STATE.roadsLayer.clearLayers();
-  for (const r of routes) {
+  OS_DERIVED_STATE.roadsRenderedSegments = [];
+
+  const routesForTotals = routes.filter((r) => {
     const coords = Array.isArray(r?.coords) ? r.coords : [];
-    if (coords.length < 2) continue;
-    if (!staticRoadVisibleAtZoom(r?.type, zoom)) continue;
-    if (!staticRouteInBounds(coords, bounds)) continue;
-    const line = L.polyline(coords, {
-      color: osRoadColorForFeature({ highway: r.type, name: r.name }),
-      weight: zoom <= 8 ? 3.4 : 4.2,
-      opacity: zoom <= 8 ? 0.88 : 0.92,
-      smoothFactor: 1.8,
-      className: "os-road-static-line"
-    }).addTo(OS_DERIVED_STATE.roadsLayer);
-    if (r.name && zoom >= 9) {
-      line.bindTooltip(`${escapeHtml(r.name)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.84 });
-    }
-  }
+    return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom);
+  });
+  const roadLengthTotals = buildRoadLineLengthTotals(routesForTotals);
 
   const visibleRoutes = routes.filter((r) => {
     const coords = Array.isArray(r?.coords) ? r.coords : [];
     return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
   });
-  const roadConnectors = buildEndpointConnectors(visibleRoutes, zoom <= 8 ? 2.1 : 1.2);
-  for (const c of roadConnectors) {
-    L.polyline(c.coords, {
-      color: osRoadColorForFeature({ highway: c.type, name: c.name }),
-      weight: zoom <= 8 ? 2.8 : 3.2,
-      opacity: 0.78,
-      smoothFactor: 2,
-      className: "os-road-static-connector"
+  const orderedVisibleRoutes = [...visibleRoutes].sort((a, b) => {
+    const keyA = normalizeRoadLineKey(a?.type, a?.name);
+    const keyB = normalizeRoadLineKey(b?.type, b?.name);
+    const totalA = Number(roadLengthTotals.get(keyA) || 0);
+    const totalB = Number(roadLengthTotals.get(keyB) || 0);
+    if (totalA !== totalB) return totalA - totalB;
+    return routeLengthKm(a?.coords || []) - routeLengthKm(b?.coords || []);
+  });
+
+  for (const r of orderedVisibleRoutes) {
+    const coords = Array.isArray(r?.coords) ? r.coords : [];
+    const lineKey = normalizeRoadLineKey(r?.type, r?.name);
+    const totalKm = Number(roadLengthTotals.get(lineKey) || routeLengthKm(coords));
+    const baseWeight = zoom <= 8 ? 3.4 : 4.2;
+    const line = L.polyline(coords, {
+      color: osRoadColorForFeature({ highway: r.type, name: r.name }),
+      weight: baseWeight,
+      opacity: 0.9,
+      smoothFactor: 1.8,
+      className: "os-road-static-line os-road-line-interactive"
     }).addTo(OS_DERIVED_STATE.roadsLayer);
+    line.bindPopup(buildOsRoadLinePopupHtml(r, lineKey, totalKm));
+    line.on("click", () => {
+      if (lineKey) OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
+      applyOsRoadSelectionStyles();
+    });
+    if (r.name && zoom >= 9) {
+      line.bindTooltip(`${escapeHtml(r.name)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.88 });
+    }
+    OS_DERIVED_STATE.roadsRenderedSegments.push({ layer: line, lineKey, totalKm, baseWeight });
   }
+
+  const roadConnectors = buildRoadGapConnectors(visibleRoutes, zoom <= 8 ? 0.14 : 0.09);
+  for (const c of roadConnectors) {
+    const lineKey = normalizeRoadLineKey(c?.type, c?.name);
+    const totalKm = Number(roadLengthTotals.get(lineKey) || routeLengthKm(c?.coords || []));
+    const baseWeight = zoom <= 8 ? 2.7 : 3.1;
+    const connector = L.polyline(c.coords, {
+      color: osRoadColorForFeature({ highway: c.type, name: c.name }),
+      weight: baseWeight,
+      opacity: 0.86,
+      smoothFactor: 1.8,
+      className: "os-road-static-line os-road-line-interactive"
+    }).addTo(OS_DERIVED_STATE.roadsLayer);
+    connector.bindPopup(buildOsRoadLinePopupHtml(c, lineKey, totalKm));
+    connector.on("click", () => {
+      if (lineKey) OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
+      applyOsRoadSelectionStyles();
+    });
+    OS_DERIVED_STATE.roadsRenderedSegments.push({ layer: connector, lineKey, totalKm, baseWeight });
+  }
+  applyOsRoadSelectionStyles();
 }
 
 function renderStaticRailOverlay() {
