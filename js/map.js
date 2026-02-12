@@ -1803,6 +1803,14 @@ function addConnection(fromLatLng, toLatLng, label, type = 'officer', metadata =
     });
     
     const labelMarker = L.marker([midLat, midLng], { icon: labelIcon }).addTo(connectionsLayer);
+    if (metadata?.hoverDetail) {
+      labelMarker.bindTooltip(String(metadata.hoverDetail), {
+        sticky: true,
+        direction: "top",
+        offset: [0, -10],
+        opacity: 0.95
+      });
+    }
     
     window._mapConnections.push({
       id: connectionId,
@@ -1960,6 +1968,73 @@ function formatI2EntitySummary(i2EntityData) {
   );
 }
 
+function getI2ValueFromEntityValues(i2EntityData, names = []) {
+  if (!i2EntityData || !Array.isArray(i2EntityData.values) || !Array.isArray(names)) return "";
+  const lowered = names.map((n) => String(n || "").toLowerCase());
+  const found = i2EntityData.values.find((v) => lowered.includes(String(v.propertyName || "").toLowerCase()));
+  return found && found.value != null ? String(found.value) : "";
+}
+
+function formatPartialDobValue(dob) {
+  if (!dob) return "";
+  if (typeof dob === "string") {
+    const raw = dob.trim();
+    if (!raw) return "";
+    const ymd = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+    const my = raw.match(/^(\d{1,2})[\/\-](\d{4})$/);
+    if (my) return `XX/${String(my[1]).padStart(2, "0")}/${my[2]}`;
+    if (/^\d{4}$/.test(raw)) return `XX/XX/${raw}`;
+    return raw;
+  }
+  if (typeof dob === "object") {
+    const year = dob.year ? String(dob.year) : "";
+    const month = dob.month ? String(dob.month).padStart(2, "0") : "";
+    const day = dob.day ? String(dob.day).padStart(2, "0") : "XX";
+    if (!year && !month) return "";
+    if (year && month) return `${day}/${month}/${year}`;
+    if (year) return `XX/XX/${year}`;
+  }
+  return "";
+}
+
+function buildEntityHoverTooltipHtml(entity) {
+  if (!entity) return "";
+  const values = entity.i2EntityData?.values || [];
+  const typeTag = entity.i2EntityData?.entityName || entity.iconData?.categoryName || entity.iconData?.name || "Entity";
+
+  let row1 = escapeHtml(entity.label || "Entity");
+  let row2 = escapeHtml(typeTag);
+  let row3 = "";
+
+  if (entity.sourceType === "company") {
+    const companyNo =
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Company/Registration Number", "Company Number", "Registration Number"]) ||
+      String(entity.companyNumber || "");
+    row2 = companyNo ? `Company #${escapeHtml(companyNo)}` : "Organisation";
+  } else if (entity.sourceType === "officer" || String(typeTag).toLowerCase() === "person") {
+    const dob =
+      getI2ValueFromEntityValues(entity.i2EntityData, ["Date of Birth", "DOB"]) ||
+      formatPartialDobValue(entity.dob || "");
+    const nationality = getI2ValueFromEntityValues(entity.i2EntityData, ["Nationality"]);
+    if (dob) row2 = `DOB ${escapeHtml(dob)}`;
+    if (nationality) row3 = `Nationality ${escapeHtml(nationality)}`;
+  }
+
+  return `<div class="entity-hover-card"><strong>${row1}</strong><br>${row2}${row3 ? `<br>${row3}` : ""}</div>`;
+}
+
+function bindEntityHoverTooltip(marker, entity) {
+  if (!marker || !entity) return;
+  marker.bindTooltip(buildEntityHoverTooltipHtml(entity), {
+    direction: "bottom",
+    offset: [0, 16],
+    sticky: true,
+    opacity: 0.95,
+    className: "entity-hover-tooltip"
+  });
+}
+
 function buildEntityPopup(entityId, entity) {
   return `
     <strong>${escapeHtml(entity.label)}</strong>
@@ -2031,6 +2106,10 @@ function buildOfficerI2EntityData(personData = {}) {
   const personEntity = getI2EntityByKey("ET5") || getI2EntityByKey("Person");
   const values = [];
   if (personData.name) values.push({ propertyName: "Full Name", value: String(personData.name) });
+  if (personData.dob) values.push({ propertyName: "Date of Birth", value: formatPartialDobValue(personData.dob) });
+  if (personData.nationality) values.push({ propertyName: "Nationality", value: String(personData.nationality) });
+  if (personData.countryOfResidence) values.push({ propertyName: "Country of Residence", value: String(personData.countryOfResidence) });
+  if (personData.relationship) values.push({ propertyName: "Role", value: String(personData.relationship) });
   if (personData.address) values.push({ propertyName: "Address String", value: String(personData.address) });
   if (personData.postcode) values.push({ propertyName: "Post Code", value: String(personData.postcode) });
   return {
@@ -2052,6 +2131,7 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
     const existing = getEntityById(existingId);
     if (existing) {
       marker._entityId = existingId;
+      bindEntityHoverTooltip(marker, existing);
       return existingId;
     }
   }
@@ -2068,9 +2148,12 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
     latLng: coords,
     marker,
     i2EntityData: buildOfficerI2EntityData(personData),
-    sourceType: "officer"
+    sourceType: "officer",
+    dob: personData.dob || "",
+    nationality: personData.nationality || ""
   };
   marker._entityId = entityId;
+  bindEntityHoverTooltip(marker, entity);
   window._mapEntities.push(entity);
   window._officerEntityIndex[dedupeKey] = entityId;
   updateDashboardCounts();
@@ -2104,6 +2187,7 @@ function registerCompanyMarkerAsEntity(marker, companyData = {}) {
     if (existing) {
       marker._entityId = existingId;
       bindCompanyEntityMarkerClick(marker);
+      bindEntityHoverTooltip(marker, existing);
       return existingId;
     }
   }
@@ -2126,6 +2210,7 @@ function registerCompanyMarkerAsEntity(marker, companyData = {}) {
 
   marker._entityId = entityId;
   bindCompanyEntityMarkerClick(marker);
+  bindEntityHoverTooltip(marker, entity);
   window._mapEntities.push(entity);
   window._companyEntityIndex[numberKey] = entityId;
   updateDashboardCounts();
@@ -2149,14 +2234,22 @@ function getCompanyEntityByNumber(companyNumber) {
   return entityId ? getEntityById(entityId) : null;
 }
 
-function offsetLatLngFromAnchor(anchor, seedText = "", radiusDeg = 0.0035) {
+function getNextPscFanIndex(companyEntityId) {
+  if (!companyEntityId || !Array.isArray(window._mapConnections)) return 0;
+  return window._mapConnections.filter((c) =>
+    c?.metadata?.source === "psc_auto" && c?.metadata?.toId === companyEntityId
+  ).length;
+}
+
+function offsetLatLngFromAnchor(anchor, fanIndex = 0, radiusDeg = 0.00115) {
   const base = normalizeLatLng(anchor);
   if (!Number.isFinite(base[0]) || !Number.isFinite(base[1])) return base;
-  const seed = String(seedText || "");
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = ((h << 5) - h + seed.charCodeAt(i)) | 0;
-  const angle = (Math.abs(h) % 360) * (Math.PI / 180);
-  return [base[0] + Math.sin(angle) * radiusDeg, base[1] + Math.cos(angle) * radiusDeg];
+  const idx = Number.isFinite(Number(fanIndex)) ? Number(fanIndex) : 0;
+  const angleDeg = ((idx + 1) * 45) % 360;
+  const ring = Math.floor(idx / 8);
+  const distance = radiusDeg * (1 + ring * 0.5);
+  const rad = angleDeg * (Math.PI / 180);
+  return [base[0] + Math.sin(rad) * distance, base[1] + Math.cos(rad) * distance];
 }
 
 function removeCompanyEntitiesFromStore() {
@@ -2229,6 +2322,7 @@ function placeEntity(latLng, iconData, label = '', address = '', notes = '', i2E
   };
 
   marker.bindPopup(buildEntityPopup(entityId, entity)).addTo(entitiesLayer);
+  bindEntityHoverTooltip(marker, entity);
   marker.on("dragend", () => {
     const next = marker.getLatLng();
     entity.latLng = [Number(next.lat), Number(next.lng)];
@@ -2297,6 +2391,7 @@ function editEntity(entityId) {
   entity.notes = newNotes.trim();
   
   entity.marker.setPopupContent(buildEntityPopup(entityId, entity));
+  bindEntityHoverTooltip(entity.marker, entity);
   setStatus('Entity updated');
 }
 
@@ -2407,7 +2502,8 @@ function showConnectionPopup(latlng, connectionId, label, metadata) {
       <strong>Connection</strong>
       <span class="popup-label">Label</span> ${escapeHtml(label || 'No label')}<br>
       ${metadata.fromLabel ? `<span class="popup-label">From</span> ${escapeHtml(metadata.fromLabel)}<br>` : ''}
-      ${metadata.toLabel ? `<span class="popup-label">To</span> ${escapeHtml(metadata.toLabel)}` : ''}
+      ${metadata.toLabel ? `<span class="popup-label">To</span> ${escapeHtml(metadata.toLabel)}<br>` : ''}
+      ${metadata.hoverDetail ? `<span class="popup-label">Detail</span> ${escapeHtml(metadata.hoverDetail)}` : ''}
       <div class="popup-btn-row">
         <button class="popup-psc-btn" onclick="editConnection('${connectionId}')">Edit Label</button>
         <button class="popup-psc-btn" onclick="removeConnection('${connectionId}')">Remove</button>
@@ -2456,6 +2552,14 @@ function editConnection(connectionId) {
     });
     
     conn.labelMarker = L.marker([midLat, midLng], { icon: labelIcon }).addTo(connectionsLayer);
+    if (conn?.metadata?.hoverDetail) {
+      conn.labelMarker.bindTooltip(String(conn.metadata.hoverDetail), {
+        sticky: true,
+        direction: "top",
+        offset: [0, -10],
+        opacity: 0.95
+      });
+    }
   }
   
   setStatus('Connection updated');
@@ -3802,9 +3906,10 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
     let personLatLng = [coords.lat, coords.lon];
     const linkedCompanyEntity = options.companyNumber ? getCompanyEntityByNumber(options.companyNumber) : null;
     if (linkedCompanyEntity?.latLng) {
-      personLatLng = offsetLatLngFromAnchor(linkedCompanyEntity.latLng, `${officerName}|${options.companyNumber}`);
+      const fanIndex = getNextPscFanIndex(linkedCompanyEntity.id);
+      personLatLng = offsetLatLngFromAnchor(linkedCompanyEntity.latLng, fanIndex);
     } else if (options.anchorLatLng) {
-      personLatLng = offsetLatLngFromAnchor(options.anchorLatLng, `${officerName}|anchor`);
+      personLatLng = offsetLatLngFromAnchor(options.anchorLatLng, 0);
     }
 
     const officerIconData = getOfficerEntityIconData();
@@ -3823,7 +3928,11 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
       address: addrString,
       postcode,
       latLng: personLatLng,
-      notes: companies.length ? `${companies.length} related compan${companies.length === 1 ? "y" : "ies"}` : ""
+      notes: companies.length ? `${companies.length} related compan${companies.length === 1 ? "y" : "ies"}` : "",
+      dob: options?.pscData?.date_of_birth || options?.dob || "",
+      nationality: options?.pscData?.nationality || options?.nationality || "",
+      countryOfResidence: options?.pscData?.country_of_residence || "",
+      relationship: options?.relationship || ""
     });
     const popup = personEntityId
       ? buildEntityPopup(personEntityId, getEntityById(personEntityId))
@@ -3870,7 +3979,8 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
           toId: linkedCompanyEntity.id,
           fromLabel: officerName,
           toLabel: linkedCompanyEntity.label,
-          source: "psc_auto"
+          source: "psc_auto",
+          hoverDetail: String(options.relationshipDetail || "").trim()
         }
       );
     }

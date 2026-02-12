@@ -669,6 +669,24 @@ body {
   font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
   background: rgba(99,102,241,0.15); color: #a78bfa;
 }
+
+.entity-hover-tooltip {
+  background: rgba(7, 16, 23, 0.95);
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 8px;
+  color: #d6e3ef;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.entity-hover-tooltip .leaflet-tooltip-content {
+  margin: 6px 8px;
+}
+
+.entity-hover-card {
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
 /* Popup button row - wrap horizontally */
 .leaflet-popup-content .popup-btn-row {
   display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px;

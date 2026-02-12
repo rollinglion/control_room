@@ -969,6 +969,74 @@ function formatPSCKind(kind) {
     .replace(/\b\w/g, l => l.toUpperCase());
 }
 
+function normalizePersonName(name) {
+  return String(name || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatOfficerRole(role) {
+  const raw = String(role || "").trim().toLowerCase();
+  if (!raw) return "";
+  return raw
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function formatPscNature(nature) {
+  return String(nature || "")
+    .replace(/-/g, " ")
+    .replace(/\b\w/g, (m) => m.toUpperCase())
+    .trim();
+}
+
+function formatPartialDobForDisplay(dob) {
+  if (!dob || typeof dob !== "object") return "";
+  const year = dob.year ? String(dob.year) : "";
+  const month = dob.month ? String(dob.month).padStart(2, "0") : "";
+  const day = dob.day ? String(dob.day).padStart(2, "0") : "XX";
+  if (year && month) return `${day}/${month}/${year}`;
+  if (year) return `XX/XX/${year}`;
+  return "";
+}
+
+async function lookupCompanyOfficerRole(companyNumber, personName) {
+  const company = String(companyNumber || "").trim();
+  const person = normalizePersonName(personName);
+  if (!company || !person) return "";
+  try {
+    const response = await fetchCH(`/company/${encodeURIComponent(company)}/officers?items_per_page=100`);
+    if (!response.ok) return "";
+    const payload = await response.json();
+    const officers = Array.isArray(payload?.items) ? payload.items : [];
+    const hit = officers.find((o) => normalizePersonName(o?.name) === person);
+    return formatOfficerRole(hit?.officer_role || "");
+  } catch (err) {
+    console.warn("Officer role lookup failed:", err);
+    return "";
+  }
+}
+
+function buildPscRelationshipDetail(psc) {
+  const parts = [];
+  const natures = Array.isArray(psc?.natures_of_control) ? psc.natures_of_control.filter(Boolean) : [];
+  if (natures.length) parts.push(`Control: ${natures.map(formatPscNature).join("; ")}`);
+  if (psc?.nationality) parts.push(`Nationality: ${psc.nationality}`);
+  if (psc?.country_of_residence) parts.push(`Residence: ${psc.country_of_residence}`);
+  if (psc?.notified_on) parts.push(`Notified: ${psc.notified_on}`);
+  const dob = formatPartialDobForDisplay(psc?.date_of_birth);
+  if (dob) parts.push(`DOB: ${dob}`);
+  return parts.join(" | ");
+}
+
+function derivePscRelationshipLabel(psc, officerRole = "") {
+  if (officerRole) return officerRole;
+  if (psc?.kind && String(psc.kind).includes("corporate")) return "Corporate PSC";
+  return "PSC";
+}
+
 function pscCanMap(psc) {
   const addr = psc?.address || {};
   return !!String(addr.postal_code || "").trim();
@@ -998,17 +1066,18 @@ async function addPSCToMap(psc, companyNumber, companyName) {
   }
   const personName = String(psc?.name || "PSC");
   const officerAddress = toOfficerAddressFromPSC(psc);
-  const relationship =
-    (Array.isArray(psc?.natures_of_control) && psc.natures_of_control.length
-      ? String(psc.natures_of_control[0]).replace(/-/g, " ")
-      : (psc?.kind ? formatPSCKind(psc.kind) : "PSC"));
   try {
+    const officerRole = await lookupCompanyOfficerRole(companyNumber, personName);
+    const relationship = derivePscRelationshipLabel(psc, officerRole);
+    const relationshipDetail = buildPscRelationshipDetail(psc);
     const companyEntity = typeof window.getCompanyEntityByNumber === "function"
       ? window.getCompanyEntityByNumber(companyNumber)
       : null;
     await addFn(personName, officerAddress, [companyName || `Company #${companyNumber}`], {
       companyNumber,
       relationship,
+      relationshipDetail,
+      pscData: psc,
       anchorLatLng: companyEntity?.latLng || null
     });
     setStatus(`Added PSC to map: ${personName}`);
