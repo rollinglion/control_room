@@ -62,10 +62,18 @@ The following datasets ARE included and required for core functionality:
 ### Large OSM PBF (Recommended Workflow)
 If you have `data/OS Map/great-britain-260211.osm.pbf`, do not load it in-browser.
 
-Generate small themed overlays instead:
+Generate small themed overlays instead.
+
+Option A (Python 3.11 + pyrosm):
 ```bash
 pip install pyrosm geopandas shapely pyproj
 python scripts/build_osm_layers.py --pbf "data/OS Map/great-britain-260211.osm.pbf" --out "data/osm_derived" --simplify 25
+```
+
+Option B (Python 3.12 friendly, GDAL backend):
+```bash
+winget install OSGeo.GDAL
+python scripts/build_osm_layers.py --backend ogr --pbf "data/OS Map/great-britain-260211.osm.pbf" --out "data/osm_derived"
 ```
 
 This creates:
