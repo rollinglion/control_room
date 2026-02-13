@@ -4059,8 +4059,12 @@ const OS_DERIVED_STATE = {
   railStaticRenderSig: "",
   roadsSelectedLineKey: "",
   roadsRenderedSegments: [],
+  roadsPolylineMode: false,
+  roadsPolylineSegments: [],
   railSelectedLineKey: "",
-  railRenderedSegments: []
+  railRenderedSegments: [],
+  railPolylineMode: false,
+  railPolylineSegments: []
 };
 
 function markOsDerivedLayerUnavailable(layerKey, reason = "") {
@@ -4109,6 +4113,17 @@ const OS_ROAD_BASE_COLOURS = {
   primary: "#eab308",
   secondary: "#d97706",
   tertiary: "#fb923c"
+};
+const STATIC_ROAD_COLOUR_TO_TYPE = {
+  "#1d4ed8": "motorway",
+  "#2563eb": "trunk",
+  "#3b82f6": "primary",
+  "#60a5fa": "secondary"
+};
+const STATIC_RAIL_COLOUR_TO_TYPE = {
+  "#38bdf8": "rail",
+  "#22d3ee": "light_rail",
+  "#67e8f9": "tram"
 };
 const OS_ROAD_LINE_PALETTE = [
   "#ef4444",
@@ -4272,6 +4287,38 @@ function staticRouteInBounds(coords = [], bounds = null) {
     if (Number.isFinite(lat) && Number.isFinite(lon) && bounds.contains([lat, lon])) return true;
   }
   return false;
+}
+
+function buildStaticPolylineSegments(payload = {}, kind = "road") {
+  const rows = Array.isArray(payload?.polylines) ? payload.polylines : [];
+  const colourMap = kind === "rail" ? STATIC_RAIL_COLOUR_TO_TYPE : STATIC_ROAD_COLOUR_TO_TYPE;
+  const fallbackType = kind === "rail" ? "rail" : "primary";
+  const out = [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i];
+    if (!Array.isArray(row) || row.length < 4) continue;
+    const colour = String(row[0] || "").toLowerCase();
+    const type = colourMap[colour] || fallbackType;
+    const opacity = Number(row[1]);
+    const coords = [];
+    for (let j = 2; j < row.length; j += 1) {
+      const p = row[j];
+      if (!Array.isArray(p) || p.length < 2) continue;
+      const lat = Number(p[0]);
+      const lon = Number(p[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+      coords.push([lat, lon]);
+    }
+    if (coords.length < 2) continue;
+    out.push({
+      type,
+      coords,
+      color: colour,
+      opacity: Number.isFinite(opacity) ? Math.max(0.1, Math.min(1, opacity)) : 0.9,
+      lengthKm: routeLengthKm(coords)
+    });
+  }
+  return out;
 }
 
 function staticRoadVisibleAtZoom(type = "", zoom = 0) {
@@ -4968,8 +5015,89 @@ function renderOsRailOverlayViewport() {
 
 const scheduleOsRailViewportRender = debounce(renderOsRailOverlayViewport, 160);
 
+function renderStaticRoadPolylineOverlay() {
+  if (!OS_DERIVED_STATE.roadsLayer) return;
+  const sig = getStaticRenderSignature();
+  if (sig === OS_DERIVED_STATE.roadsStaticRenderSig) return;
+  OS_DERIVED_STATE.roadsStaticRenderSig = sig;
+  const bounds = getExpandedBounds(0.45);
+  const zoom = map.getZoom();
+  const source = Array.isArray(OS_DERIVED_STATE.roadsPolylineSegments) ? OS_DERIVED_STATE.roadsPolylineSegments : [];
+  const visible = source
+    .filter((seg) => staticRoadVisibleAtZoom(seg?.type, zoom) && staticRouteInBounds(seg?.coords, bounds))
+    .sort((a, b) => (Number(b?.lengthKm || 0) - Number(a?.lengthKm || 0)));
+  const cap = zoom <= 6 ? 900 : (zoom <= 8 ? 1400 : 2200);
+  OS_DERIVED_STATE.roadsLayer.clearLayers();
+  OS_DERIVED_STATE.roadsRenderedSegments = [];
+
+  for (const seg of visible.slice(0, cap)) {
+    const t = String(seg?.type || "").toLowerCase();
+    const baseWeight = t === "motorway" ? (zoom <= 8 ? 3.7 : 4.6)
+      : t === "trunk" ? (zoom <= 8 ? 3.2 : 4.0)
+      : t === "primary" ? (zoom <= 8 ? 2.8 : 3.5)
+      : (zoom <= 8 ? 2.2 : 2.9);
+    L.polyline(seg.coords, {
+      color: seg.color || osRoadColorForFeature({ highway: seg.type }),
+      weight: baseWeight,
+      opacity: Number.isFinite(seg.opacity) ? seg.opacity : 0.9,
+      smoothFactor: 1.6,
+      className: "os-road-static-line"
+    }).addTo(OS_DERIVED_STATE.roadsLayer);
+  }
+}
+
+function renderStaticRailPolylineOverlay() {
+  if (!OS_DERIVED_STATE.railLayer) return;
+  const sig = getStaticRenderSignature();
+  if (sig === OS_DERIVED_STATE.railStaticRenderSig) return;
+  OS_DERIVED_STATE.railStaticRenderSig = sig;
+  const bounds = getExpandedBounds(0.45);
+  const zoom = map.getZoom();
+  const source = Array.isArray(OS_DERIVED_STATE.railPolylineSegments) ? OS_DERIVED_STATE.railPolylineSegments : [];
+  const visible = source
+    .filter((seg) => staticRailVisibleAtZoom(seg?.type, zoom) && staticRouteInBounds(seg?.coords, bounds))
+    .sort((a, b) => (Number(b?.lengthKm || 0) - Number(a?.lengthKm || 0)));
+  const cap = zoom <= 6 ? 1100 : (zoom <= 8 ? 1800 : 2800);
+  const stations = Array.isArray(OS_DERIVED_STATE.railStationData?.stations) ? OS_DERIVED_STATE.railStationData.stations : [];
+  OS_DERIVED_STATE.railLayer.clearLayers();
+  OS_DERIVED_STATE.railRenderedSegments = [];
+
+  for (const seg of visible.slice(0, cap)) {
+    const t = String(seg?.type || "").toLowerCase();
+    const baseWeight = t === "rail" ? (zoom <= 8 ? 2.8 : 3.6) : (zoom <= 8 ? 2.2 : 3.0);
+    L.polyline(seg.coords, {
+      color: seg.color || osRailColorForFeature({ railway: seg.type }),
+      weight: baseWeight,
+      opacity: Number.isFinite(seg.opacity) ? seg.opacity : 0.9,
+      smoothFactor: 1.6,
+      className: "os-rail-static-line"
+    }).addTo(OS_DERIVED_STATE.railLayer);
+  }
+
+  if (zoom < 7) return;
+  for (const s of stations) {
+    const lat = Number(s?.lat);
+    const lon = Number(s?.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    if (!bounds.contains([lat, lon])) continue;
+    const marker = L.circleMarker([lat, lon], {
+      radius: zoom >= 10 ? 3 : 2.4,
+      color: "#e0f2fe",
+      fillColor: "#38bdf8",
+      fillOpacity: 0.88,
+      weight: 1.2,
+      className: "os-rail-static-node"
+    }).addTo(OS_DERIVED_STATE.railLayer);
+    if (s.name && zoom >= 10) marker.bindTooltip(escapeHtml(s.name), { sticky: true, opacity: 0.82 });
+  }
+}
+
 function renderStaticRoadOverlay() {
   if (!OS_DERIVED_STATE.roadsLayer || !OS_DERIVED_STATE.roadsData) return;
+  if (OS_DERIVED_STATE.roadsPolylineMode) {
+    renderStaticRoadPolylineOverlay();
+    return;
+  }
   const sig = getStaticRenderSignature();
   if (sig === OS_DERIVED_STATE.roadsStaticRenderSig) return;
   OS_DERIVED_STATE.roadsStaticRenderSig = sig;
@@ -5057,6 +5185,10 @@ function renderStaticRoadOverlay() {
 
 function renderStaticRailOverlay() {
   if (!OS_DERIVED_STATE.railLayer || !OS_DERIVED_STATE.railData) return;
+  if (OS_DERIVED_STATE.railPolylineMode) {
+    renderStaticRailPolylineOverlay();
+    return;
+  }
   const sig = getStaticRenderSignature();
   if (sig === OS_DERIVED_STATE.railStaticRenderSig) return;
   OS_DERIVED_STATE.railStaticRenderSig = sig;
@@ -5187,13 +5319,32 @@ async function loadOsRoadOverlay() {
     return;
   }
   try {
-    const staticPicked = await fetchJsonFromCandidates(["data/transport_static/roads_core.json"]);
+    const staticPicked = await fetchJsonFromCandidates([
+      "data/transport_static/uk-roads.json",
+      "data/transport_static/roads_core.json"
+    ]);
     const staticRoadPayload = (staticPicked && typeof staticPicked.data === "object" && staticPicked.data)
       ? staticPicked.data
       : staticPicked;
+    if (staticRoadPayload && Array.isArray(staticRoadPayload.polylines) && staticRoadPayload.polylines.length) {
+      OS_DERIVED_STATE.roadsData = { routes: [] };
+      OS_DERIVED_STATE.roadsMergedRoutes = [];
+      OS_DERIVED_STATE.roadsPolylineSegments = buildStaticPolylineSegments(staticRoadPayload, "road");
+      OS_DERIVED_STATE.roadsPolylineMode = true;
+      OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
+      OS_DERIVED_STATE.roadsLoaded = true;
+      OS_DERIVED_STATE.roadsStatic = true;
+      OS_DERIVED_STATE.roadsStaticRenderSig = "";
+      renderStaticRoadOverlay();
+      markLayerAsStaticMode("os_roads");
+      setStatus("OS roads overlay loaded (UK polyline pack).");
+      return;
+    }
     if (staticRoadPayload && Array.isArray(staticRoadPayload.routes) && staticRoadPayload.routes.length) {
       OS_DERIVED_STATE.roadsData = staticRoadPayload;
       OS_DERIVED_STATE.roadsMergedRoutes = mergeStaticRoadRoutes(staticRoadPayload.routes || []);
+      OS_DERIVED_STATE.roadsPolylineSegments = [];
+      OS_DERIVED_STATE.roadsPolylineMode = false;
       OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
       OS_DERIVED_STATE.roadsLoaded = true;
       OS_DERIVED_STATE.roadsStatic = true;
@@ -5220,10 +5371,34 @@ async function loadOsRailOverlay() {
   }
   try {
     // Always prefer compact static core to avoid browser crashes on huge rail GeoJSON.
-    const staticRail = await fetchJsonFromCandidates(["data/transport_static/rail_core.json"]);
+    const staticRail = await fetchJsonFromCandidates([
+      "data/transport_static/uk-lines.json",
+      "data/transport_static/rail_core.json"
+    ]);
     const staticRailPayload = (staticRail && typeof staticRail.data === "object" && staticRail.data)
       ? staticRail.data
       : staticRail;
+    if (staticRailPayload && Array.isArray(staticRailPayload.polylines) && staticRailPayload.polylines.length) {
+      const staticStations = await fetchJsonFromCandidates(["data/transport_static/rail_stations_core.json"]);
+      const staticStationPayload = (staticStations && typeof staticStations.data === "object" && staticStations.data)
+        ? staticStations.data
+        : staticStations;
+      OS_DERIVED_STATE.railData = { routes: [] };
+      OS_DERIVED_STATE.railMergedRoutes = [];
+      OS_DERIVED_STATE.railPolylineSegments = buildStaticPolylineSegments(staticRailPayload, "rail");
+      OS_DERIVED_STATE.railPolylineMode = true;
+      OS_DERIVED_STATE.railStationData = (staticStationPayload && Array.isArray(staticStationPayload.stations))
+        ? staticStationPayload
+        : { stations: [] };
+      OS_DERIVED_STATE.railLayer = L.featureGroup().addTo(layers.os_rail);
+      OS_DERIVED_STATE.railLoaded = true;
+      OS_DERIVED_STATE.railStatic = true;
+      OS_DERIVED_STATE.railStaticRenderSig = "";
+      renderStaticRailOverlay();
+      markLayerAsStaticMode("os_rail");
+      setStatus("UK rail network loaded (UK polyline pack).");
+      return;
+    }
     if (staticRailPayload && Array.isArray(staticRailPayload.routes) && staticRailPayload.routes.length) {
       const staticStations = await fetchJsonFromCandidates(["data/transport_static/rail_stations_core.json"]);
       const staticStationPayload = (staticStations && typeof staticStations.data === "object" && staticStations.data)
@@ -5231,6 +5406,8 @@ async function loadOsRailOverlay() {
         : staticStations;
       OS_DERIVED_STATE.railData = staticRailPayload;
       OS_DERIVED_STATE.railMergedRoutes = mergeStaticRailRoutes(staticRailPayload.routes || []);
+      OS_DERIVED_STATE.railPolylineSegments = [];
+      OS_DERIVED_STATE.railPolylineMode = false;
       OS_DERIVED_STATE.railStationData = (staticStationPayload && Array.isArray(staticStationPayload.stations))
         ? staticStationPayload
         : { stations: [] };

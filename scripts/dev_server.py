@@ -1,29 +1,44 @@
 import base64
+import gzip
 import json
 import os
 import re
 import sys
+import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Dict, Tuple
-from urllib.parse import urlsplit, parse_qs, urlencode, quote_plus
+from urllib.parse import urlsplit, parse_qs, urlencode, quote_plus, quote
 
 CH_API_BASE = "https://api.company-information.service.gov.uk"
 TFL_API_BASE = "https://api.tfl.gov.uk"
 POSTCODES_API_BASE = "https://api.postcodes.io"
-OPENSKY_API_BASE = "https://opensky-network.org/api"
 OS_PLACES_API_BASE = "https://api.os.uk/search/places/v1"
 NRE_LDBWS_URL = "https://lite.realtime.nationalrail.co.uk/OpenLDBWS/ldb11.asmx"
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search"
 AVIATIONSTACK_BASE = "http://api.aviationstack.com/v1"
 UK_RAIL_STATIONS_URL = "https://raw.githubusercontent.com/davwheat/uk-railway-stations/main/stations.json"
 WEBTRIS_API_BASE = "https://webtris.highwaysengland.co.uk/api"
-SIGNALBOX_API_BASE = "https://api.signalbox.io/v2.5"
 DVLA_VES_API_BASE = "https://driver-vehicle-licensing.api.gov.uk"
 RAILDATA_API_BASE = "https://opendata.nationalrail.co.uk"
+FR24_FEED_URL = "https://data-cloud.flightradar24.com/zones/fcgi/feed.js"
+FR24_CLICKHANDLER_URL = "https://data-live.flightradar24.com/clickhandler/?flight="
+FR24_DEFAULT_BOUNDS = (61.2, 49.7, -11.5, 2.8)
+UK_AIRPORT_IATA = {
+    "LHR", "LGW", "STN", "LTN", "LCY", "SEN", "MAN", "BHX", "BRS", "LPL", "NCL", "EMA", "NQY", "EXT", "SOU", "BOH", "NWI", "MME", "LBA", "HUY", "CWL",
+    "EDI", "GLA", "ABZ", "INV", "PIK", "DND",
+    "BFS", "BHD",
+    "IOM", "JER", "GCI",
+}
+UK_AIRSPACE_BOUNDS = {
+    "south": 49.3,
+    "north": 61.3,
+    "west": -9.8,
+    "east": 2.8,
+}
 
 _station_catalog_cache = {
     "loaded": False,
@@ -74,8 +89,6 @@ def load_env_file():
                         print(f"OS_PLACES_API_KEY loaded: {value.strip()[:8]}...")
                     if key.strip() == "NRE_LDBWS_TOKEN":
                         print(f"NRE_LDBWS_TOKEN loaded: {value.strip()[:8]}...")
-                    if key.strip() == "SIGNALBOX_API_KEY":
-                        print(f"SIGNALBOX_API_KEY loaded: {value.strip()[:8]}...")
                     if key.strip() == "DVLA_API_KEY":
                         print(f"DVLA_API_KEY loaded: {value.strip()[:8]}...")
     else:
@@ -345,6 +358,20 @@ class Handler(SimpleHTTPRequestHandler):
         if not isinstance(raw, dict):
             return {"generatedAt": "", "locationName": "", "crs": crs_fallback, "nrccMessages": [], "services": []}
 
+        def nrcc_text(msg):
+            if msg is None:
+                return ""
+            if isinstance(msg, str):
+                return msg.strip()
+            if isinstance(msg, dict):
+                direct = str(msg.get("message") or msg.get("value") or msg.get("text") or msg.get("reason") or msg.get("content") or "").strip()
+                if direct:
+                    return direct
+                for v in msg.values():
+                    if isinstance(v, str) and v.strip():
+                        return v.strip()
+            return ""
+
         services = []
         for svc in (raw.get("trainServices") or []):
             if not isinstance(svc, dict):
@@ -370,7 +397,7 @@ class Handler(SimpleHTTPRequestHandler):
             "generatedAt": str(raw.get("generatedAt") or ""),
             "locationName": str(raw.get("locationName") or ""),
             "crs": str(raw.get("crs") or crs_fallback or ""),
-            "nrccMessages": [str(m).strip() for m in (raw.get("nrccMessages") or []) if str(m).strip()],
+            "nrccMessages": [nrcc_text(m) for m in (raw.get("nrccMessages") or []) if nrcc_text(m)],
             "services": services,
         }
 
@@ -426,6 +453,43 @@ class Handler(SimpleHTTPRequestHandler):
             with urllib.request.urlopen(req, timeout=30) as resp:
                 text = resp.read().decode("utf-8", errors="replace")
                 parsed = json.loads(text)
+                def stop_obj(x):
+                    if not isinstance(x, dict):
+                        return None
+                    crs = str(x.get("crs") or x.get("CRS") or "").strip().upper()
+                    name = str(x.get("locationName") or x.get("stationName") or x.get("name") or "").strip()
+                    if not crs and not name:
+                        return None
+                    return {"crs": crs, "name": name}
+
+                def collect(raw, out, seen):
+                    if raw is None:
+                        return
+                    if isinstance(raw, list):
+                        for item in raw:
+                            collect(item, out, seen)
+                        return
+                    if not isinstance(raw, dict):
+                        return
+                    st = stop_obj(raw)
+                    if st:
+                        key = st["crs"] or st["name"].lower()
+                        if key and key not in seen:
+                            seen.add(key)
+                            out.append(st)
+                    for key in ("callingPoint", "callingPoints", "previousCallingPoints", "subsequentCallingPoints"):
+                        if key in raw:
+                            collect(raw.get(key), out, seen)
+
+                points = []
+                seen_points = set()
+                collect(parsed.get("previousCallingPoints"), points, seen_points)
+                collect({"crs": parsed.get("crs"), "locationName": parsed.get("locationName")}, points, seen_points)
+                collect(parsed.get("subsequentCallingPoints"), points, seen_points)
+                if not points:
+                    collect(parsed.get("origin"), points, seen_points)
+                    collect(parsed.get("destination"), points, seen_points)
+
                 service = {
                     "serviceID": str(parsed.get("serviceID") or parsed.get("serviceId") or service_id),
                     "operator": str(parsed.get("operator") or ""),
@@ -436,6 +500,9 @@ class Handler(SimpleHTTPRequestHandler):
                     "platform": str(parsed.get("platform") or ""),
                     "delayReason": str(parsed.get("delayReason") or ""),
                     "cancelReason": str(parsed.get("cancelReason") or ""),
+                    "locationName": str(parsed.get("locationName") or ""),
+                    "crs": str(parsed.get("crs") or "").upper(),
+                    "callingPoints": points,
                 }
                 return service, None
         except urllib.error.HTTPError as e:
@@ -464,6 +531,104 @@ class Handler(SimpleHTTPRequestHandler):
 </soap:Envelope>
 """
         return envelope.encode("utf-8")
+
+    def _http_get_json_gzip(self, url: str, timeout_s: int = 15):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36",
+                    "Accept": "application/json, text/plain, */*",
+                    "Accept-Encoding": "gzip",
+                    "Referer": "https://www.flightradar24.com/",
+                    "Origin": "https://www.flightradar24.com",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+                raw = resp.read()
+                enc = (resp.headers.get("Content-Encoding") or "").strip().lower()
+                if enc == "gzip":
+                    raw = gzip.decompress(raw)
+            return json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception:
+            return None
+
+    def _fr24_fetch_feed(self, bounds):
+        try:
+            n, s, w, e = bounds
+        except Exception:
+            n, s, w, e = FR24_DEFAULT_BOUNDS
+        params = {
+            "faa": "1",
+            "satellite": "1",
+            "mlat": "1",
+            "flarm": "1",
+            "adsb": "1",
+            "gnd": "1",
+            "air": "1",
+            "vehicles": "0",
+            "estimated": "1",
+            "maxage": "14400",
+            "gliders": "0",
+            "stats": "1",
+            "limit": "1500",
+            "bounds": f"{n},{s},{w},{e}",
+        }
+        url = FR24_FEED_URL + "?" + urlencode(params)
+        return self._http_get_json_gzip(url, timeout_s=15)
+
+    def _fr24_extract_flights(self, payload):
+        flights = []
+        if not isinstance(payload, dict):
+            return flights
+        for fid, info in payload.items():
+            fid_s = str(fid or "")
+            if not fid_s or not fid_s[0].isdigit():
+                continue
+            if not isinstance(info, list) or len(info) < 17:
+                continue
+
+            def at(i):
+                try:
+                    return info[i]
+                except Exception:
+                    return None
+
+            lat = at(1)
+            lon = at(2)
+            if lat is None or lon is None:
+                continue
+            flights.append(
+                {
+                    "id": fid_s,
+                    "icao24": at(0),
+                    "lat": lat,
+                    "lon": lon,
+                    "heading": at(3),
+                    "altitude": at(4),
+                    "speed": at(5),
+                    "squawk": at(6),
+                    "aircraft": at(8),
+                    "registration": at(9),
+                    "time": at(10),
+                    "origin": at(11),
+                    "destination": at(12),
+                    "number": at(13),
+                    "onGround": at(14),
+                    "verticalSpeed": at(15),
+                    "callsign": at(16),
+                    "airlineIcao": at(18),
+                }
+            )
+        return flights
+
+    def _fr24_fetch_details(self, flight_id: str):
+        fid = str(flight_id or "").strip()
+        if not fid:
+            return None
+        url = FR24_CLICKHANDLER_URL + quote(fid, safe="")
+        data = self._http_get_json_gzip(url, timeout_s=15)
+        return data if isinstance(data, dict) else None
 
     def _call_ldbws(self, method: str, body_xml: str):
         token = os.environ.get("NRE_LDBWS_TOKEN", "").strip()
@@ -591,39 +756,9 @@ class Handler(SimpleHTTPRequestHandler):
             self._proxy_get(upstream_url, headers={"Accept": "application/json"})
             return
 
-        if self.path.startswith("/signalbox/health"):
-            key = os.environ.get("SIGNALBOX_API_KEY", "").strip()
-            self._send_json({"ok": True, "configured": bool(key), "endpoint": SIGNALBOX_API_BASE})
-            return
-
         if self.path.startswith("/dvla/health"):
             key = os.environ.get("DVLA_API_KEY", "").strip()
             self._send_json({"ok": True, "configured": bool(key), "endpoint": f"{DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles"})
-            return
-
-        if self.path.startswith("/signalbox/trains"):
-            key = os.environ.get("SIGNALBOX_API_KEY", "").strip()
-            if not key:
-                self._send_json({"error": "SIGNALBOX_API_KEY env var not set"}, status=500)
-                return
-            parsed = urlsplit(self.path)
-            query = f"?{parsed.query}" if parsed.query else ""
-            upstream_url = SIGNALBOX_API_BASE + "/trains" + query
-            self._proxy_get(
-                upstream_url,
-                headers={
-                    "Accept": "application/json",
-                    "Authorization": f"Bearer {key}",
-                },
-            )
-            return
-
-        if self.path.startswith("/opensky/states/all"):
-            query = self.path.split("?", 1)[1] if "?" in self.path else ""
-            upstream_url = OPENSKY_API_BASE + "/states/all"
-            if query:
-                upstream_url += "?" + query
-            self._proxy_get(upstream_url, headers={"Accept": "application/json"})
             return
 
         if self.path.startswith("/osplaces/postcode"):
@@ -1037,6 +1172,99 @@ class Handler(SimpleHTTPRequestHandler):
             )
             return
 
+        if self.path.startswith("/api/flightradar/flights"):
+            parsed = urlsplit(self.path)
+            params = parse_qs(parsed.query or "")
+
+            uk_only_raw = ((params.get("ukOnly") or ["0"])[0]).strip().lower()
+            uk_only = uk_only_raw in {"1", "true", "yes", "on"}
+
+            def as_float(value, fallback):
+                try:
+                    return float(str(value).strip())
+                except Exception:
+                    return fallback
+
+            n = as_float((params.get("n") or [None])[0], FR24_DEFAULT_BOUNDS[0])
+            s = as_float((params.get("s") or [None])[0], FR24_DEFAULT_BOUNDS[1])
+            w = as_float((params.get("w") or [None])[0], FR24_DEFAULT_BOUNDS[2])
+            e = as_float((params.get("e") or [None])[0], FR24_DEFAULT_BOUNDS[3])
+
+            n = max(-90.0, min(90.0, n))
+            s = max(-90.0, min(90.0, s))
+            w = max(-180.0, min(180.0, w))
+            e = max(-180.0, min(180.0, e))
+
+            data = self._fr24_fetch_feed((n, s, w, e))
+            if not data:
+                self._send_json({"ok": False, "error": "FlightRadar24 fetch failed"}, status=502)
+                return
+
+            flights = self._fr24_extract_flights(data)
+            if uk_only:
+                def in_uk_airspace(f):
+                    try:
+                        lat = float(f.get("lat"))
+                        lon = float(f.get("lon"))
+                    except Exception:
+                        return False
+                    return (
+                        UK_AIRSPACE_BOUNDS["south"] <= lat <= UK_AIRSPACE_BOUNDS["north"]
+                        and UK_AIRSPACE_BOUNDS["west"] <= lon <= UK_AIRSPACE_BOUNDS["east"]
+                    )
+                flights = [
+                    f for f in flights
+                    if in_uk_airspace(f)
+                    or (
+                        (not isinstance(f.get("lat"), (int, float)) or not isinstance(f.get("lon"), (int, float)))
+                        and (
+                            str(f.get("origin") or "").strip().upper() in UK_AIRPORT_IATA
+                            or str(f.get("destination") or "").strip().upper() in UK_AIRPORT_IATA
+                        )
+                    )
+                ]
+
+            self._send_json(
+                {
+                    "ok": True,
+                    "bounds": {"n": n, "s": s, "w": w, "e": e},
+                    "ukOnly": uk_only,
+                    "count": len(flights),
+                    "flights": flights,
+                    "generatedAt": time.time(),
+                }
+            )
+            return
+
+        if self.path.startswith("/api/flightradar/flight"):
+            parsed = urlsplit(self.path)
+            params = parse_qs(parsed.query or "")
+            fid = str((params.get("id") or [""])[0] or "").strip()
+            if not fid:
+                self._send_json({"ok": False, "error": "Missing id"}, status=400)
+                return
+            include_trail = str((params.get("trail") or ["1"])[0]).strip().lower() not in {"0", "false", "no", "off"}
+            details = self._fr24_fetch_details(fid)
+            if not details:
+                self._send_json({"ok": False, "error": "FlightRadar24 details fetch failed"}, status=502)
+                return
+
+            out = {
+                "identification": details.get("identification") or {},
+                "status": details.get("status") or {},
+                "aircraft": details.get("aircraft") or {},
+                "airline": details.get("airline") or {},
+                "airport": details.get("airport") or {},
+                "time": details.get("time") or {},
+                "trail": [],
+            }
+            if include_trail:
+                trail = details.get("trail")
+                if isinstance(trail, list):
+                    out["trail"] = trail[-600:]
+            self._send_json({"ok": True, "id": fid, "details": out, "generatedAt": time.time()})
+            return
+
         if self.path.startswith("/flight/schedule"):
             parsed = urlsplit(self.path)
             params = parse_qs(parsed.query or "")
@@ -1196,14 +1424,14 @@ def main():
     print(f"Proxy:  /tfl/* -> {TFL_API_BASE}")
     print(f"Proxy:  /postcodes/* -> {POSTCODES_API_BASE}")
     print(f"Proxy:  /webtris/* -> {WEBTRIS_API_BASE}")
-    print(f"Proxy:  /opensky/states/all -> {OPENSKY_API_BASE}/states/all")
+    print(f"Proxy:  /api/flightradar/flights?n=..&s=..&w=..&e=.. -> {FR24_FEED_URL}")
+    print(f"Proxy:  /api/flightradar/flight?id=... -> {FR24_CLICKHANDLER_URL}<id>")
     print(f"Proxy:  /osplaces/postcode?postcode=... -> {OS_PLACES_API_BASE}/postcode")
     print(f"Proxy:  /nre/departures|arrivals?crs=KGX&rows=10 -> {NRE_LDBWS_URL}")
     print(f"Proxy:  /nre/service?service_id=... -> {NRE_LDBWS_URL}")
     print(f"Proxy:  /nre/stations?q=king&limit=20 -> {UK_RAIL_STATIONS_URL}")
     print(f"Proxy:  /geo/search?q=... -> {NOMINATIM_BASE}")
     print(f"Proxy:  /flight/schedule?callsign=BAW130&icao24=... -> {AVIATIONSTACK_BASE}/flights")
-    print(f"Proxy:  /signalbox/trains?... -> {SIGNALBOX_API_BASE}/trains")
     print(f"Proxy:  /dvla/vehicle [POST] -> {DVLA_VES_API_BASE}/vehicle-enquiry/v1/vehicles")
     print(f"Proxy:  /raildata/feeds -> {RAILDATA_API_BASE}/api/feeds")
     print(f"Proxy:  /raildata/kb/<feed> -> {RAILDATA_API_BASE}/api/staticfeeds/* (X-Auth-Token)")
