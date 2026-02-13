@@ -21,7 +21,7 @@ async function fetchTfl(path) {
 
   // Proxy first (scripts/dev_server.py -> /tfl/*)
   try {
-    const proxyResp = await fetch(apiUrl(`/tfl${normalized}`), {
+    const proxyResp = await apiFetch(`/tfl${normalized}`, {
       headers: { "Accept": "application/json" }
     });
     if (proxyResp.ok) return proxyResp;

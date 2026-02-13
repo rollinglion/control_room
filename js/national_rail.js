@@ -50,7 +50,7 @@ function extractNrccMessageText(msg) {
 }
 
 async function fetchNrJson(path) {
-  const r = await fetch(apiUrl(path), { headers: { "Accept": "application/json" } });
+  const r = await apiFetch(path, { headers: { "Accept": "application/json" } });
   if (!r.ok) {
     let detail = "";
     try {
@@ -318,7 +318,7 @@ async function fetchNrHealth() {
 }
 
 async function fetchRailDataRaw(path) {
-  const resp = await fetch(apiUrl(path), {
+  const resp = await apiFetch(path, {
     headers: { Accept: "application/json, application/xml, text/xml, text/plain" }
   });
   const ct = String(resp.headers.get("content-type") || "").toLowerCase();

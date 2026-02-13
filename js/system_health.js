@@ -3,7 +3,7 @@
 
 async function checkHealthEndpoint(name, path, expected = 200) {
   try {
-    const r = await fetch(apiUrl(path), { headers: { Accept: "application/json" } });
+    const r = await apiFetch(path, { headers: { Accept: "application/json" } });
     return {
       name,
       ok: r.status === expected || r.ok,

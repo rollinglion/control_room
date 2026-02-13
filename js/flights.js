@@ -311,7 +311,7 @@ async function fetchFlightScheduleHints(flight) {
   if (callsign) q.set("callsign", callsign);
   if (icao24) q.set("icao24", icao24);
   try {
-    const r = await fetch(apiUrl(`/flight/schedule?${q.toString()}`), { headers: { Accept: "application/json" } });
+    const r = await apiFetch(`/flight/schedule?${q.toString()}`, { headers: { Accept: "application/json" } });
     if (!r.ok) return null;
     const data = await r.json();
     FLIGHTS_STATE.scheduleCache.set(key, { ts: Date.now(), data });
@@ -881,7 +881,9 @@ window.focusFlightIcao = focusFlight;
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 
 function getFlightFetchBounds() {
-  const bb = { ...CONTROL_ROOM_CONFIG.FLIGHTS_STATE.bbox };
+  const flightCfg = (CONTROL_ROOM_CONFIG && CONTROL_ROOM_CONFIG.flights) ? CONTROL_ROOM_CONFIG.flights : {};
+  const defaultBbox = { lamin: 35.0, lamax: 63.0, lomin: -15.0, lomax: 20.0 };
+  const bb = { ...defaultBbox, ...(flightCfg.bbox || {}) };
   if (typeof map !== "undefined" && map && typeof map.getBounds === "function") {
     try {
       const b = map.getBounds().pad(0.18);
@@ -905,7 +907,7 @@ async function fetchFlightRadarFeed() {
     e: String(bb.lomax),
     ukOnly: FLIGHTS_STATE.filters?.ukNexusOnly ? "1" : "0"
   });
-  const resp = await fetch(apiUrl(`/api/flightradar/flights?${q.toString()}`), {
+  const resp = await apiFetch(`/api/flightradar/flights?${q.toString()}`, {
     headers: { Accept: "application/json" }
   });
   if (!resp.ok) {
@@ -920,7 +922,7 @@ async function fetchFlightRadarDetails(flightId) {
   if (!fid) return null;
   try {
     const q = new URLSearchParams({ id: fid, trail: "1" });
-    const resp = await fetch(apiUrl(`/api/flightradar/flight?${q.toString()}`), {
+    const resp = await apiFetch(`/api/flightradar/flight?${q.toString()}`, {
       headers: { Accept: "application/json" }
     });
     if (!resp.ok) return null;
@@ -1223,7 +1225,12 @@ function startFlightTracking() {
   flightRefreshLoop();
 
   // Start interval
-  FLIGHTS_STATE.timer = setInterval(flightRefreshLoop, CONTROL_ROOM_CONFIG.FLIGHTS_STATE.refreshInterval);
+  const flightCfg = (CONTROL_ROOM_CONFIG && CONTROL_ROOM_CONFIG.flights) ? CONTROL_ROOM_CONFIG.flights : {};
+  const refreshMs = Number(flightCfg.refreshInterval);
+  FLIGHTS_STATE.timer = setInterval(
+    flightRefreshLoop,
+    Number.isFinite(refreshMs) && refreshMs >= 15000 ? refreshMs : 480000
+  );
   updateFlightInfo(null, 0);
 }
 

@@ -60,7 +60,7 @@ async function fetchWebtris(path) {
 
   // Try local proxy first.
   try {
-    const proxyResp = await fetch(apiUrl(`/webtris/${normalized}`), { headers: { Accept: "application/json" } });
+    const proxyResp = await apiFetch(`/webtris/${normalized}`, { headers: { Accept: "application/json" } });
     if (proxyResp.ok) return proxyResp;
     if (proxyResp.status !== 404 && proxyResp.status < 500) return proxyResp;
   } catch (_) {
@@ -402,4 +402,8 @@ function initRoads() {
   });
 }
 
-document.addEventListener("DOMContentLoaded", initRoads);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initRoads);
+} else {
+  initRoads();
+}
