@@ -6,6 +6,28 @@ function setStatus(msg) {
   const el = document.getElementById("status-text");
   if (el) el.textContent = msg;
 }
+
+function showToast(message, type = "info", timeoutMs = 2600) {
+  const stack = document.getElementById("toast-stack");
+  if (!stack || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast-msg toast-${type}`;
+  toast.textContent = String(message);
+  stack.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("show"));
+  window.setTimeout(() => {
+    toast.classList.remove("show");
+    window.setTimeout(() => toast.remove(), 220);
+  }, timeoutMs);
+}
+
+function setSkeletonVisible(id, visible) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle("hidden", !visible);
+  el.setAttribute("aria-hidden", visible ? "false" : "true");
+}
+
 function showProgress() { document.getElementById("data-progress")?.classList.remove("done"); }
 function hideProgress() { document.getElementById("data-progress")?.classList.add("done"); }
 function setProgress(scanned, total, matchCount) {
@@ -28,6 +50,8 @@ function setPscProgress(msg, pct) {
   if (t) t.textContent = msg;
   if (p) p.textContent = pct != null ? pct + "%" : "";
 }
+
+let lastOpsRankIndex = -1;
 
 // â”€â”€ Companies House data â”€â”€
 
@@ -600,7 +624,9 @@ function toggleEntityBoxSelectMode(nextState = null) {
 
 function exportEntitiesToExcel() {
   if (!window.XLSX) {
-    alert("Excel export library unavailable. Refresh and try again.");
+    const msg = "Excel export library unavailable. Refresh and try again.";
+    setStatus(msg);
+    showToast(msg, "error");
     return;
   }
 
@@ -612,7 +638,9 @@ function exportEntitiesToExcel() {
     : [...window._mapEntities];
 
   if (!entities.length) {
-    alert("No entities available to export.");
+    const msg = "No entities available to export.";
+    setStatus(msg);
+    showToast(msg, "info");
     return;
   }
 
@@ -667,6 +695,7 @@ function exportEntitiesToExcel() {
   const fileName = `${yyyy}${mm}${dd} - Control Room - Entity Export.xlsx`;
   window.XLSX.writeFile(wb, fileName);
   setStatus(`Exported ${entities.length} entities to ${fileName}`);
+  showToast(`Exported ${entities.length} entities`, "success");
 }
 
 // Companies starts ON (checked in HTML)
@@ -3081,8 +3110,44 @@ function buildVehiclePopupMediaHtml(entity = {}) {
 function updateDashboardCounts() {
   const entityCount = document.getElementById('entity_count');
   const connectionCount = document.getElementById('connection_count');
-  if (entityCount) entityCount.textContent = window._mapEntities.length;
-  if (connectionCount) connectionCount.textContent = window._mapConnections.length;
+  const totalEntities = window._mapEntities.length;
+  const totalConnections = window._mapConnections.length;
+  const activeLayerCount = document.querySelectorAll(".layer-cb:checked").length;
+
+  if (entityCount) entityCount.textContent = totalEntities;
+  if (connectionCount) connectionCount.textContent = totalConnections;
+
+  const cpEntitiesChip = document.getElementById("cp-entities-chip");
+  const cpLinksChip = document.getElementById("cp-links-chip");
+  const cpActiveLayersChip = document.getElementById("cp-active-layers");
+  const cpOpsScoreChip = document.getElementById("cp-ops-score");
+  const cpOpsRankChip = document.getElementById("cp-ops-rank");
+
+  if (cpEntitiesChip) cpEntitiesChip.textContent = String(totalEntities);
+  if (cpLinksChip) cpLinksChip.textContent = String(totalConnections);
+  if (cpActiveLayersChip) cpActiveLayersChip.textContent = String(activeLayerCount);
+
+  const opsScore = (totalEntities * 10) + (totalConnections * 15) + (activeLayerCount * 4);
+  if (cpOpsScoreChip) cpOpsScoreChip.textContent = String(opsScore);
+
+  const rankBands = [
+    { min: 0, label: "Observer" },
+    { min: 120, label: "Analyst" },
+    { min: 280, label: "Controller" },
+    { min: 520, label: "Commander" }
+  ];
+  let rankIndex = 0;
+  for (let i = rankBands.length - 1; i >= 0; i -= 1) {
+    if (opsScore >= rankBands[i].min) {
+      rankIndex = i;
+      break;
+    }
+  }
+  if (cpOpsRankChip) cpOpsRankChip.textContent = rankBands[rankIndex].label;
+  if (lastOpsRankIndex >= 0 && rankIndex > lastOpsRankIndex && opsScore > 0) {
+    showToast(`Rank up: ${rankBands[rankIndex].label}`, "success", 2200);
+  }
+  lastOpsRankIndex = rankIndex;
 }
 
 // Make functions globally accessible
@@ -4225,6 +4290,44 @@ async function fetchJsonFromCandidates(paths) {
   return null;
 }
 
+function extractRoutesFromGeoJson(data, mode = "road") {
+  const features = Array.isArray(data?.features) ? data.features : [];
+  const out = [];
+  for (const f of features) {
+    const props = f?.properties || {};
+    const g = f?.geometry || {};
+    const gType = String(g?.type || "");
+    const coords = g?.coordinates;
+    const name = String(props?.name || "").trim();
+    const type = mode === "road"
+      ? String(props?.highway || "").toLowerCase()
+      : String(props?.railway || "").toLowerCase();
+
+    if (mode === "road" && !["motorway", "trunk", "primary", "secondary", "tertiary"].includes(type)) continue;
+    if (mode === "rail" && !["rail", "light_rail", "subway", "tram", "narrow_gauge"].includes(type)) continue;
+
+    const addLine = (line) => {
+      if (!Array.isArray(line) || line.length < 2) return;
+      const points = [];
+      for (const p of line) {
+        if (!Array.isArray(p) || p.length < 2) continue;
+        const lon = Number(p[0]);
+        const lat = Number(p[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+        points.push([lat, lon]);
+      }
+      if (points.length < 2) return;
+      out.push({ name, type, coords: points });
+    };
+
+    if (gType === "LineString") addLine(coords);
+    if (gType === "MultiLineString" && Array.isArray(coords)) {
+      for (const part of coords) addLine(part);
+    }
+  }
+  return out;
+}
+
 function getExpandedBounds(pad = 0.18) {
   try {
     return map.getBounds().pad(pad);
@@ -4427,10 +4530,10 @@ function staticRailPriorityScore(route = {}, totalKm = 0) {
 }
 
 function railDisplayRouteLimitForZoom(zoom = 0) {
-  if (zoom <= 7) return 180;
-  if (zoom <= 9) return 320;
-  if (zoom <= 11) return 520;
-  return 760;
+  if (zoom <= 6) return 2200;
+  if (zoom <= 8) return 4200;
+  if (zoom <= 10) return 7000;
+  return 11000;
 }
 
 function simplifyCoordsByStepKm(coords = [], minStepKm = 0.2) {
@@ -4465,6 +4568,20 @@ function simplifyRailRouteForDisplay(coords = [], zoom = 0) {
   if (zoom <= 9) return simplifyCoordsByStepKm(coords, 0.28);
   if (zoom <= 11) return simplifyCoordsByStepKm(coords, 0.14);
   return simplifyCoordsByStepKm(coords, 0.08);
+}
+
+function simplifyRoadRouteForDisplay(coords = [], zoom = 0) {
+  if (zoom <= 7) return simplifyCoordsByStepKm(coords, 0.42);
+  if (zoom <= 9) return simplifyCoordsByStepKm(coords, 0.22);
+  if (zoom <= 11) return simplifyCoordsByStepKm(coords, 0.12);
+  return simplifyCoordsByStepKm(coords, 0.07);
+}
+
+function roadDisplayRouteLimitForZoom(zoom = 0) {
+  if (zoom <= 6) return 2400;
+  if (zoom <= 8) return 4200;
+  if (zoom <= 10) return 6200;
+  return 9000;
 }
 
 function buildRailSpineDisplayRoutes(routes = [], zoom = 0) {
@@ -5101,46 +5218,37 @@ function renderStaticRoadOverlay() {
   const sig = getStaticRenderSignature();
   if (sig === OS_DERIVED_STATE.roadsStaticRenderSig) return;
   OS_DERIVED_STATE.roadsStaticRenderSig = sig;
-  const routes = Array.isArray(OS_DERIVED_STATE.roadsMergedRoutes) && OS_DERIVED_STATE.roadsMergedRoutes.length
-    ? OS_DERIVED_STATE.roadsMergedRoutes
-    : (Array.isArray(OS_DERIVED_STATE.roadsData.routes) ? OS_DERIVED_STATE.roadsData.routes : []);
+  const routes = Array.isArray(OS_DERIVED_STATE.roadsData.routes) ? OS_DERIVED_STATE.roadsData.routes : [];
   const bounds = getExpandedBounds(0.5);
   const zoom = map.getZoom();
   OS_DERIVED_STATE.roadsLayer.clearLayers();
   OS_DERIVED_STATE.roadsRenderedSegments = [];
 
-  const routesForTotals = routes.filter((r) => {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom);
-  });
-  const roadLengthTotals = buildRoadLineLengthTotals(routesForTotals);
-
   const visibleRoutes = routes.filter((r) => {
     const coords = Array.isArray(r?.coords) ? r.coords : [];
-    if (!(coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds))) return false;
-    const lineKey = normalizeRoadLineKey(r?.type, r?.name);
-    const totalKm = Number(roadLengthTotals.get(lineKey) || routeLengthKm(coords));
-    return isMajorStaticRoadRoute(r, totalKm, zoom);
+    return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
   });
   const orderedVisibleRoutes = [...visibleRoutes].sort((a, b) => {
-    const keyA = normalizeRoadLineKey(a?.type, a?.name);
-    const keyB = normalizeRoadLineKey(b?.type, b?.name);
-    const totalA = Number(roadLengthTotals.get(keyA) || 0);
-    const totalB = Number(roadLengthTotals.get(keyB) || 0);
-    const priA = staticRoadPriorityScore(a, totalA);
-    const priB = staticRoadPriorityScore(b, totalB);
-    if (priA !== priB) return priA - priB;
-    if (totalA !== totalB) return totalA - totalB;
+    const w = { motorway: 1, trunk: 2, primary: 3, secondary: 4, tertiary: 5 };
+    const ta = String(a?.type || "").toLowerCase();
+    const tb = String(b?.type || "").toLowerCase();
+    const wa = Number(w[ta] || 9);
+    const wb = Number(w[tb] || 9);
+    if (wa !== wb) return wb - wa;
     return routeLengthKm(a?.coords || []) - routeLengthKm(b?.coords || []);
-  });
+  }).slice(0, roadDisplayRouteLimitForZoom(zoom));
 
   for (const r of orderedVisibleRoutes) {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
+    const rawCoords = Array.isArray(r?.coords) ? r.coords : [];
+    const coords = simplifyRoadRouteForDisplay(rawCoords, zoom);
+    if (!Array.isArray(coords) || coords.length < 2) continue;
     const lineKey = normalizeRoadLineKey(r?.type, r?.name);
-    const totalKm = Number(roadLengthTotals.get(lineKey) || routeLengthKm(coords));
-    const priority = staticRoadPriorityScore(r, totalKm);
-    const priorityBoost = Math.max(0, Math.min(1.6, (priority - 8) * 0.06));
-    const baseWeight = (zoom <= 8 ? 3.0 : 3.7) + priorityBoost;
+    const totalKm = routeLengthKm(rawCoords);
+    const t = String(r?.type || "").toLowerCase();
+    const baseWeight = t === "motorway" ? (zoom <= 8 ? 3.8 : 4.6)
+      : t === "trunk" ? (zoom <= 8 ? 3.2 : 4.0)
+      : t === "primary" ? (zoom <= 8 ? 2.8 : 3.5)
+      : (zoom <= 8 ? 2.3 : 2.9);
     const line = L.polyline(coords, {
       color: osRoadColorForFeature({ highway: r.type, name: r.name }),
       weight: baseWeight,
@@ -5158,28 +5266,6 @@ function renderStaticRoadOverlay() {
     }
     OS_DERIVED_STATE.roadsRenderedSegments.push({ layer: line, lineKey, totalKm, baseWeight });
   }
-
-  const roadConnectors = buildRoadGapConnectors(visibleRoutes, zoom <= 8 ? 0.38 : 0.24);
-  for (const c of roadConnectors) {
-    const lineKey = normalizeRoadLineKey(c?.type, c?.name);
-    const totalKm = Number(roadLengthTotals.get(lineKey) || routeLengthKm(c?.coords || []));
-    const priority = staticRoadPriorityScore(c, totalKm);
-    const priorityBoost = Math.max(0, Math.min(1.1, (priority - 8) * 0.045));
-    const baseWeight = (zoom <= 8 ? 2.3 : 2.7) + priorityBoost;
-    const connector = L.polyline(c.coords, {
-      color: osRoadColorForFeature({ highway: c.type, name: c.name }),
-      weight: baseWeight,
-      opacity: 0.88,
-      smoothFactor: 1.8,
-      className: "os-road-static-line os-road-line-interactive"
-    }).addTo(OS_DERIVED_STATE.roadsLayer);
-    connector.bindPopup(buildOsRoadLinePopupHtml(c, lineKey, totalKm));
-    connector.on("click", () => {
-      if (lineKey) OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
-      applyOsRoadSelectionStyles();
-    });
-    OS_DERIVED_STATE.roadsRenderedSegments.push({ layer: connector, lineKey, totalKm, baseWeight });
-  }
   applyOsRoadSelectionStyles();
 }
 
@@ -5192,59 +5278,38 @@ function renderStaticRailOverlay() {
   const sig = getStaticRenderSignature();
   if (sig === OS_DERIVED_STATE.railStaticRenderSig) return;
   OS_DERIVED_STATE.railStaticRenderSig = sig;
-  const routes = Array.isArray(OS_DERIVED_STATE.railMergedRoutes) && OS_DERIVED_STATE.railMergedRoutes.length
-    ? OS_DERIVED_STATE.railMergedRoutes
-    : (Array.isArray(OS_DERIVED_STATE.railData.routes) ? OS_DERIVED_STATE.railData.routes : []);
+  const routes = Array.isArray(OS_DERIVED_STATE.railData.routes) ? OS_DERIVED_STATE.railData.routes : [];
   const stations = Array.isArray(OS_DERIVED_STATE.railStationData?.stations) ? OS_DERIVED_STATE.railStationData.stations : [];
   const bounds = getExpandedBounds(0.5);
   const zoom = map.getZoom();
   OS_DERIVED_STATE.railLayer.clearLayers();
   OS_DERIVED_STATE.railRenderedSegments = [];
 
-  const routesForTotals = routes.filter((r) => {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    return coords.length >= 2 && staticRailVisibleAtZoom(r?.type, zoom);
-  });
-  const lineLengthTotals = buildRailLineLengthTotals(routesForTotals);
-
   const visibleCandidates = routes.filter((r) => {
     const coords = Array.isArray(r?.coords) ? r.coords : [];
     return coords.length >= 2 && staticRailVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
   });
-  const prioritizedVisible = [...visibleCandidates].sort((a, b) => {
-    const keyA = normalizeRailLineKey(a?.type, a?.name);
-    const keyB = normalizeRailLineKey(b?.type, b?.name);
-    const totalA = Number(lineLengthTotals.get(keyA) || 0);
-    const totalB = Number(lineLengthTotals.get(keyB) || 0);
-    const priA = staticRailPriorityScore(a, totalA);
-    const priB = staticRailPriorityScore(b, totalB);
-    if (priA !== priB) return priB - priA;
-    if (totalA !== totalB) return totalB - totalA;
-    return routeLengthKm(b?.coords || []) - routeLengthKm(a?.coords || []);
-  });
-  const visibleRoutes = prioritizedVisible
-    .filter((r) => {
-      const key = normalizeRailLineKey(r?.type, r?.name);
-      const totalKm = Number(lineLengthTotals.get(key) || routeLengthKm(r?.coords || []));
-      // Keep a trunk-network view at lower zoom, similar to TfL-style line clarity.
-      if (zoom <= 7) return isMajorStaticRailRoute(r, totalKm, zoom);
-      if (zoom <= 9) return staticRailPriorityScore(r, totalKm) >= 8 || isMajorStaticRailRoute(r, totalKm, zoom);
-      return true;
+  const displayRoutes = [...visibleCandidates]
+    .sort((a, b) => {
+      const t = { rail: 1, light_rail: 2, subway: 3, tram: 4, narrow_gauge: 5 };
+      const ta = String(a?.type || "").toLowerCase();
+      const tb = String(b?.type || "").toLowerCase();
+      const wa = Number(t[ta] || 9);
+      const wb = Number(t[tb] || 9);
+      if (wa !== wb) return wb - wa;
+      return routeLengthKm(b?.coords || []) - routeLengthKm(a?.coords || []);
     })
     .slice(0, railDisplayRouteLimitForZoom(zoom));
-
-  const useSpineMode = zoom <= 10;
-  const displayRoutes = useSpineMode ? buildRailSpineDisplayRoutes(visibleRoutes, zoom) : visibleRoutes;
 
   for (const r of displayRoutes) {
     const rawCoords = Array.isArray(r?.coords) ? r.coords : [];
     const coords = simplifyRailRouteForDisplay(rawCoords, zoom);
     if (!Array.isArray(coords) || coords.length < 2) continue;
     const lineKey = normalizeRailLineKey(r?.type, r?.name);
-    const totalKm = Number(lineLengthTotals.get(lineKey) || routeLengthKm(rawCoords));
-    const priority = staticRailPriorityScore(r, totalKm);
-    const priorityBoost = Math.max(0, Math.min(1.8, (priority - 8) * 0.07));
-    const baseWeight = (zoom <= 8 ? 3.0 : 3.8) + priorityBoost;
+    const totalKm = routeLengthKm(rawCoords);
+    const t = String(r?.type || "").toLowerCase();
+    const baseWeight = t === "rail" ? (zoom <= 8 ? 3.0 : 3.8)
+      : (zoom <= 8 ? 2.4 : 3.1);
     const line = L.polyline(coords, {
       color: osRailColorForFeature({ railway: r.type, name: r.name }),
       weight: baseWeight,
@@ -5262,32 +5327,6 @@ function renderStaticRailOverlay() {
       line.bindTooltip(`${escapeHtml(tipName)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.9 });
     }
     OS_DERIVED_STATE.railRenderedSegments.push({ layer: line, lineKey, totalKm, baseWeight });
-  }
-
-  if (!useSpineMode) {
-    // Larger join radius prevents obvious breaks where adjacent segments are not perfectly snapped.
-    const connectorSource = visibleRoutes.length > 520 ? visibleRoutes.slice(0, 520) : visibleRoutes;
-    const railGapConnectors = buildRailGapConnectors(connectorSource, zoom <= 8 ? 0.55 : 0.35);
-    for (const c of railGapConnectors) {
-      const lineKey = normalizeRailLineKey(c?.type, c?.name);
-      const totalKm = Number(lineLengthTotals.get(lineKey) || routeLengthKm(c?.coords || []));
-      const priority = staticRailPriorityScore(c, totalKm);
-      const priorityBoost = Math.max(0, Math.min(1.2, (priority - 8) * 0.05));
-      const baseWeight = (zoom <= 8 ? 2.5 : 2.9) + priorityBoost;
-      const connector = L.polyline(c.coords, {
-        color: osRailColorForFeature({ railway: c.type, name: c.name }),
-        weight: baseWeight,
-        opacity: 0.9,
-        smoothFactor: 1.6,
-        className: "os-rail-static-line os-rail-line-interactive"
-      }).addTo(OS_DERIVED_STATE.railLayer);
-      connector.bindPopup(buildOsRailLinePopupHtml(c, lineKey, totalKm));
-      connector.on("click", () => {
-        if (lineKey) OS_DERIVED_STATE.railSelectedLineKey = lineKey;
-        applyOsRailSelectionStyles();
-      });
-      OS_DERIVED_STATE.railRenderedSegments.push({ layer: connector, lineKey, totalKm, baseWeight });
-    }
   }
   applyOsRailSelectionStyles();
 
@@ -5319,13 +5358,35 @@ async function loadOsRoadOverlay() {
     return;
   }
   try {
+    // Rebuilt pipeline: prefer full osm_derived lite GeoJSON first.
+    // Core/polyline packs remain fallback only.
+    const roadsGeo = await fetchGeoJsonFromCandidates([
+      "data/osm_derived/gb_major_roads_lite.geojson"
+    ]);
+    if (roadsGeo?.data?.type === "FeatureCollection") {
+      OS_DERIVED_STATE.roadsData = { routes: extractRoutesFromGeoJson(roadsGeo.data, "road") };
+      OS_DERIVED_STATE.roadsMergedRoutes = [];
+      OS_DERIVED_STATE.roadsPolylineSegments = [];
+      OS_DERIVED_STATE.roadsPolylineMode = false;
+      OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
+      OS_DERIVED_STATE.roadsLoaded = true;
+      OS_DERIVED_STATE.roadsStatic = true;
+      OS_DERIVED_STATE.roadsStaticRenderSig = "";
+      console.info(`[os_roads] using dataset: ${roadsGeo.path}`);
+      renderStaticRoadOverlay();
+      markLayerAsStaticMode("os_roads", "osm_derived");
+      setStatus("OS roads overlay loaded.");
+      return;
+    }
+
     const staticPicked = await fetchJsonFromCandidates([
-      "data/transport_static/uk-roads.json",
-      "data/transport_static/roads_core.json"
+      "data/transport_static/roads_core.json",
+      "data/transport_static/uk-roads.json"
     ]);
     const staticRoadPayload = (staticPicked && typeof staticPicked.data === "object" && staticPicked.data)
       ? staticPicked.data
       : staticPicked;
+    if (staticPicked?.path) console.info(`[os_roads] using dataset: ${staticPicked.path}`);
     if (staticRoadPayload && Array.isArray(staticRoadPayload.polylines) && staticRoadPayload.polylines.length) {
       OS_DERIVED_STATE.roadsData = { routes: [] };
       OS_DERIVED_STATE.roadsMergedRoutes = [];
@@ -5370,14 +5431,42 @@ async function loadOsRailOverlay() {
     return;
   }
   try {
-    // Always prefer compact static core to avoid browser crashes on huge rail GeoJSON.
+    // Rebuilt pipeline: prefer full osm_derived lite GeoJSON first.
+    // Core/polyline packs remain fallback only.
+    const railGeo = await fetchGeoJsonFromCandidates([
+      "data/osm_derived/gb_rail_lines_lite.geojson"
+    ]);
+    if (railGeo?.data?.type === "FeatureCollection") {
+      const staticStations = await fetchJsonFromCandidates(["data/transport_static/rail_stations_core.json"]);
+      const staticStationPayload = (staticStations && typeof staticStations.data === "object" && staticStations.data)
+        ? staticStations.data
+        : staticStations;
+      OS_DERIVED_STATE.railData = { routes: extractRoutesFromGeoJson(railGeo.data, "rail") };
+      OS_DERIVED_STATE.railMergedRoutes = [];
+      OS_DERIVED_STATE.railPolylineSegments = [];
+      OS_DERIVED_STATE.railPolylineMode = false;
+      OS_DERIVED_STATE.railStationData = (staticStationPayload && Array.isArray(staticStationPayload.stations))
+        ? staticStationPayload
+        : { stations: [] };
+      OS_DERIVED_STATE.railLayer = L.featureGroup().addTo(layers.os_rail);
+      OS_DERIVED_STATE.railLoaded = true;
+      OS_DERIVED_STATE.railStatic = true;
+      OS_DERIVED_STATE.railStaticRenderSig = "";
+      console.info(`[os_rail] using dataset: ${railGeo.path}`);
+      renderStaticRailOverlay();
+      markLayerAsStaticMode("os_rail", "osm_derived");
+      setStatus("UK rail network loaded.");
+      return;
+    }
+
     const staticRail = await fetchJsonFromCandidates([
-      "data/transport_static/uk-lines.json",
-      "data/transport_static/rail_core.json"
+      "data/transport_static/rail_core.json",
+      "data/transport_static/uk-lines.json"
     ]);
     const staticRailPayload = (staticRail && typeof staticRail.data === "object" && staticRail.data)
       ? staticRail.data
       : staticRail;
+    if (staticRail?.path) console.info(`[os_rail] using dataset: ${staticRail.path}`);
     if (staticRailPayload && Array.isArray(staticRailPayload.polylines) && staticRailPayload.polylines.length) {
       const staticStations = await fetchJsonFromCandidates(["data/transport_static/rail_stations_core.json"]);
       const staticStationPayload = (staticStations && typeof staticStations.data === "object" && staticStations.data)
@@ -6289,6 +6378,7 @@ function clearAll() {
     const el = document.getElementById(id); if (el) el.value = "";
   });
   document.getElementById("ch_results").innerHTML = "";
+  setSkeletonVisible("ch-results-skeleton", false);
   hideProgress(); CH_LAST_RESULTS = [];
   setStatus("Ready");
 }
@@ -6297,6 +6387,7 @@ function clearPsc() {
   document.getElementById("psc_name").value = "";
   document.getElementById("psc_company").value = "";
   document.getElementById("psc_results").innerHTML = "";
+  setSkeletonVisible("psc-results-skeleton", false);
   hidePscProgress();
   setStatus("Ready");
 }
@@ -6310,6 +6401,7 @@ async function runPscSearch() {
   if (!nameVal && !coVal) return;
 
   resultsDiv.innerHTML = '<div class="ch-loading">Searching via API...</div>';
+  setSkeletonVisible("psc-results-skeleton", true);
   showPscProgress();
 
   if (coVal) {
@@ -6319,6 +6411,7 @@ async function runPscSearch() {
     
     const pscRecords = await getPSCForCompanyAPI(coVal);
     hidePscProgress();
+    setSkeletonVisible("psc-results-skeleton", false);
     
     // Get company details for better display
     let companyName = '';
@@ -6340,6 +6433,7 @@ async function runPscSearch() {
     
     const results = await searchCompaniesByOfficerAPI(nameVal, 50);
     hidePscProgress();
+    setSkeletonVisible("psc-results-skeleton", false);
     
     // Display officer search results
     resultsDiv.innerHTML = '';
@@ -6492,6 +6586,7 @@ async function runPscSearch() {
     }
   } else {
     hidePscProgress();
+    setSkeletonVisible("psc-results-skeleton", false);
     resultsDiv.innerHTML = '<div class="ch-result-count">Enter at least 3 characters</div>';
   }
 }
@@ -6501,6 +6596,7 @@ async function runPscSearch() {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 document.addEventListener("DOMContentLoaded", async () => {
+  window.__CONTROL_ROOM_ACTIVE_TAB = "search";
   setStatus("Initializing...");
   // Compatibility-only preload (non-blocking): search path is API-driven.
   loadCompaniesHouseIndex().catch(() => console.log('Legacy company index not loaded'));
@@ -6609,16 +6705,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     const latLng = editingEntity ? editingEntity.latLng : window._pendingEntityLatLng;
     const i2EntityData = collectI2EntityFormData();
     if (!i2EntityData) {
-      alert('Select an i2 entity type for this entity');
+      showToast("Select an i2 entity type for this entity", "error");
       return;
     }
     if (i2EntityData && i2EntityData.error) {
-      alert(i2EntityData.error);
+      showToast(i2EntityData.error, "error");
       return;
     }
     
     if (!categoryKey || isNaN(iconIndex) || !latLng) {
-      alert('Please fill in all required fields');
+      showToast("Please fill in all required fields", "error");
       return;
     }
     
@@ -6631,7 +6727,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     const address = inferEntityAddress(i2EntityData) || manualPlacementAddress;
     const notes = inferEntityNotes(i2EntityData);
     if (!label) {
-      alert('Please enter a label or complete i2 name fields');
+      showToast("Please enter a label or complete i2 name fields", "error");
       return;
     }
     
@@ -6713,6 +6809,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       console.error('Entity import failed:', err);
       if (summaryEl) summaryEl.textContent = `Import failed: ${err.message || err}`;
       setStatus('Entity import failed');
+      showToast(`Import failed: ${err.message || err}`, "error", 3200);
     } finally {
       if (entityImportRunBtn) entityImportRunBtn.disabled = false;
     }
@@ -6726,6 +6823,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     a.click();
     a.remove();
     setStatus("Downloaded import template");
+    showToast("Template downloaded", "success");
   });
 
   if (entityImportPanel && entityImportFile) {
@@ -6854,16 +6952,44 @@ document.addEventListener("DOMContentLoaded", async () => {
   function activateControlPanelTab(tabId = "search") {
     const tab = document.querySelector(`.cp-tab[data-tab="${tabId}"]`);
     if (!tab) return;
-    document.querySelectorAll(".cp-tab").forEach(t => t.classList.remove("active"));
-    document.querySelectorAll(".cp-tab-pane").forEach(p => p.classList.remove("active"));
+    document.querySelectorAll(".cp-tab").forEach(t => {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+      t.setAttribute("tabindex", "-1");
+    });
+    document.querySelectorAll(".cp-tab-pane").forEach(p => {
+      p.classList.remove("active");
+      p.setAttribute("aria-hidden", "true");
+    });
     tab.classList.add("active");
-    document.getElementById("tab-" + tab.dataset.tab)?.classList.add("active");
+    tab.setAttribute("aria-selected", "true");
+    tab.setAttribute("tabindex", "0");
+    const pane = document.getElementById("tab-" + tab.dataset.tab);
+    pane?.classList.add("active");
+    pane?.setAttribute("aria-hidden", "false");
     controlPanel?.classList.remove("control-panel-layers-docked");
+    window.__CONTROL_ROOM_ACTIVE_TAB = tabId;
+    document.dispatchEvent(new CustomEvent("controlroom:tabchange", { detail: { tab: tabId } }));
   }
 
   // Tabs
   document.querySelectorAll(".cp-tab").forEach(tab => {
     tab.addEventListener("click", () => activateControlPanelTab(tab.dataset.tab));
+  });
+  document.querySelector(".cp-tabs")?.addEventListener("keydown", (e) => {
+    const tabs = Array.from(document.querySelectorAll(".cp-tab"));
+    const idx = tabs.indexOf(document.activeElement);
+    if (idx < 0) return;
+    let nextIdx = idx;
+    if (e.key === "ArrowRight") nextIdx = (idx + 1) % tabs.length;
+    if (e.key === "ArrowLeft") nextIdx = (idx - 1 + tabs.length) % tabs.length;
+    if (e.key === "Home") nextIdx = 0;
+    if (e.key === "End") nextIdx = tabs.length - 1;
+    if (nextIdx !== idx) {
+      e.preventDefault();
+      tabs[nextIdx].focus();
+      activateControlPanelTab(tabs[nextIdx].dataset.tab);
+    }
   });
 
   // Top menu dropdown
@@ -6882,6 +7008,112 @@ document.addEventListener("DOMContentLoaded", async () => {
       cpMenu.setAttribute("aria-hidden", "true");
     });
   });
+
+  const quickSearchCompanyBtn = document.getElementById("quick-search-company");
+  const quickSearchOfficerBtn = document.getElementById("quick-search-officer");
+  const quickSearchDvlaBtn = document.getElementById("quick-search-dvla");
+  quickSearchCompanyBtn?.addEventListener("click", () => {
+    document.getElementById("ch_name")?.focus();
+  });
+  quickSearchOfficerBtn?.addEventListener("click", () => {
+    const details = document.getElementById("people-ops-block");
+    if (details) details.open = true;
+    document.getElementById("psc_name")?.focus();
+  });
+  quickSearchDvlaBtn?.addEventListener("click", () => {
+    const details = document.getElementById("dvla-ops-block");
+    if (details) details.open = true;
+    document.getElementById("dvla-vrm-input")?.focus();
+  });
+
+  const quickEntityPlaceBtn = document.getElementById("quick-entity-place");
+  const quickEntityImportBtn = document.getElementById("quick-entity-import");
+  const quickEntityExportBtn = document.getElementById("quick-entity-export");
+  quickEntityPlaceBtn?.addEventListener("click", () => {
+    const firstCategoryBtn = document.querySelector("#entity_selector .entity-btn");
+    if (firstCategoryBtn) {
+      firstCategoryBtn.click();
+      showToast("Select a map point to place the new entity", "info");
+    } else {
+      showToast("Entity categories are still loading", "info");
+    }
+  });
+  quickEntityImportBtn?.addEventListener("click", () => {
+    entityImportFile?.click();
+  });
+  quickEntityExportBtn?.addEventListener("click", () => {
+    exportEntitiesToExcel();
+  });
+
+  function toggleLayerFromQuickAction(layerId) {
+    const cb = document.querySelector(`.layer-cb[data-layer="${layerId}"]`);
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  const quickLayerUndergroundBtn = document.getElementById("quick-layer-underground");
+  const quickLayerFlightsBtn = document.getElementById("quick-layer-flights");
+  const quickLayerHealthBtn = document.getElementById("quick-layer-health");
+  const quickLayerMapLibreBtn = document.getElementById("quick-layer-maplibre");
+  const cpOpenMaplibreBtn = document.getElementById("cp-open-maplibre");
+  const openMaplibreRailBtn = document.getElementById("open-maplibre-rail-btn");
+  const layerPresetTransportBtn = document.getElementById("layer-preset-transport");
+  const layerPresetIntelBtn = document.getElementById("layer-preset-intel");
+  const layerPresetClearBtn = document.getElementById("layer-preset-clear");
+
+  function openUkRailVectorView() {
+    const center = map.getCenter();
+    const zoom = map.getZoom();
+    const qs = new URLSearchParams();
+    qs.set("map", "maplibre");
+    qs.set("lng", center.lng.toFixed(5));
+    qs.set("lat", center.lat.toFixed(5));
+    qs.set("z", String(Math.max(5, Math.round(zoom))));
+    const href = `index.html?${qs.toString()}`;
+    window.open(href, "_blank", "noopener,noreferrer");
+    showToast("Opened UK Rail Vector view", "success", 1800);
+  }
+
+  function setLayerEnabled(layerId, enabled) {
+    const cb = document.querySelector(`.layer-cb[data-layer="${layerId}"]`);
+    if (!cb) return;
+    if (cb.checked === enabled) return;
+    cb.checked = !!enabled;
+    cb.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function applyLayerPreset(preset) {
+    const presets = {
+      transport: new Set(["companies", "airports_uk", "seaports", "underground", "national_rail", "roads", "os_roads", "os_rail"]),
+      intel: new Set(["companies", "areas", "airports_uk", "underground", "flights", "roads"]),
+      clear: new Set(["companies"])
+    };
+    const selected = presets[preset] || presets.clear;
+    document.querySelectorAll(".layer-cb").forEach((cb) => {
+      const layerId = String(cb.dataset.layer || "");
+      setLayerEnabled(layerId, selected.has(layerId));
+    });
+    updateDashboardCounts();
+    if (preset === "transport") showToast("Preset applied: Transport Focus", "success");
+    if (preset === "intel") showToast("Preset applied: Intel Focus", "success");
+    if (preset === "clear") showToast("Preset applied: Clear All (core kept)", "info");
+  }
+
+  quickLayerUndergroundBtn?.addEventListener("click", () => toggleLayerFromQuickAction("underground"));
+  quickLayerFlightsBtn?.addEventListener("click", () => toggleLayerFromQuickAction("flights"));
+  quickLayerHealthBtn?.addEventListener("click", () => {
+    if (typeof window.runSystemHealthChecksNow === "function") {
+      window.runSystemHealthChecksNow();
+      showToast("Refreshing service health checks", "info");
+    }
+  });
+  quickLayerMapLibreBtn?.addEventListener("click", openUkRailVectorView);
+  cpOpenMaplibreBtn?.addEventListener("click", openUkRailVectorView);
+  openMaplibreRailBtn?.addEventListener("click", openUkRailVectorView);
+  layerPresetTransportBtn?.addEventListener("click", () => applyLayerPreset("transport"));
+  layerPresetIntelBtn?.addEventListener("click", () => applyLayerPreset("intel"));
+  layerPresetClearBtn?.addEventListener("click", () => applyLayerPreset("clear"));
 
   document.addEventListener("click", (e) => {
     if (!cpMenu || !cpMenuBtn) return;
@@ -6915,45 +7147,50 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   document.querySelectorAll(".layer-cb").forEach(cb => {
     cb.addEventListener("change", async () => {
-      const layerId = cb.dataset.layer;
-      const layer = layers[layerId];
-      if (!layer) return;
-      if (cb.checked && layerId === "areas") {
-        const ok = await ensurePoliceAreasLoaded();
-        if (!ok) { cb.checked = false; return; }
-      }
-      if (cb.checked && (layerId === "airports_uk" || layerId === "airports_global" || layerId === "flights")) {
-        await ensureAirportsLoaded();
-      }
-      if (cb.checked && layerId === "seaports") {
-        await ensureSeaportsLoaded();
-      }
-      if (cb.checked && layerId === "underground") {
-        const ok = await ensureUndergroundLoaded();
-        if (!ok) { cb.checked = false; return; }
-      }
-      if (cb.checked && cb.dataset.layer === "os_roads") {
-        if (map.getZoom() < 6) {
-          cb.checked = false;
-          setStatus("Zoom in to level 6+ before enabling OS roads.");
-          return;
+      try {
+        const layerId = cb.dataset.layer;
+        const layer = layers[layerId];
+        if (!layer) return;
+        if (cb.checked && layerId === "areas") {
+          const ok = await ensurePoliceAreasLoaded();
+          if (!ok) { cb.checked = false; return; }
         }
-        await loadOsRoadOverlay();
-      }
-      if (cb.checked && cb.dataset.layer === "os_rail") {
-        if (map.getZoom() < 6) {
-          cb.checked = false;
-          setStatus("Zoom in to level 6+ before enabling UK rail network.");
-          return;
+        if (cb.checked && (layerId === "airports_uk" || layerId === "airports_global" || layerId === "flights")) {
+          await ensureAirportsLoaded();
         }
-        await loadOsRailOverlay();
+        if (cb.checked && layerId === "seaports") {
+          await ensureSeaportsLoaded();
+        }
+        if (cb.checked && layerId === "underground") {
+          const ok = await ensureUndergroundLoaded();
+          if (!ok) { cb.checked = false; return; }
+        }
+        if (cb.checked && cb.dataset.layer === "os_roads") {
+          if (map.getZoom() < 6) {
+            cb.checked = false;
+            setStatus("Zoom in to level 6+ before enabling OS roads.");
+            return;
+          }
+          await loadOsRoadOverlay();
+        }
+        if (cb.checked && cb.dataset.layer === "os_rail") {
+          if (map.getZoom() < 6) {
+            cb.checked = false;
+            setStatus("Zoom in to level 6+ before enabling UK rail network.");
+            return;
+          }
+          await loadOsRailOverlay();
+        }
+        if (cb.checked) { layer.addTo(map); }
+        else { map.removeLayer(layer); }
+      } finally {
+        syncLayerToolBlocks();
+        updateDashboardCounts();
       }
-      if (cb.checked) { layer.addTo(map); }
-      else { map.removeLayer(layer); }
-      syncLayerToolBlocks();
     });
   });
   syncLayerToolBlocks();
+  updateDashboardCounts();
 
   const airportSearchInput = document.getElementById("airport-search-q");
   const airportSearchBtn = document.getElementById("airport-search-btn");
@@ -7001,12 +7238,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     showProgress(); 
     setProgress(0, 1, 0);
     setStatus("Searching via API...");
+    setSkeletonVisible("ch-results-skeleton", true);
     resultsDiv.innerHTML = '<div class="ch-loading">Searching Companies House API...</div>';
     
     try {
       const matches = await searchCompaniesViaAPI(criteria, 100);
 
       hideProgress();
+      setSkeletonVisible("ch-results-skeleton", false);
       CH_LAST_RESULTS = matches;
       renderResults(resultsDiv, matches, false);
 
@@ -7017,9 +7256,11 @@ document.addEventListener("DOMContentLoaded", async () => {
       }
     } catch (error) {
       hideProgress();
+      setSkeletonVisible("ch-results-skeleton", false);
       console.error("Search error:", error);
       resultsDiv.innerHTML = '<div class="ch-error">Search failed. Check console for details.</div>';
       setStatus("Search failed");
+      showToast("Search failed. Check connection or API proxy.", "error");
     }
   };
   btn?.addEventListener("click", runSearch);

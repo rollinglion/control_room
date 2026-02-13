@@ -38,17 +38,24 @@
         <button id="cp-toggle" title="Collapse panel">&minus;</button>
       </div>
     </div>
+    <div class="cp-meta-strip">
+      <span class="cp-meta-chip"><strong id="cp-active-layers">0</strong> Layers</span>
+      <span class="cp-meta-chip"><strong id="cp-entities-chip">0</strong> Entities</span>
+      <span class="cp-meta-chip"><strong id="cp-links-chip">0</strong> Links</span>
+      <span class="cp-meta-chip cp-meta-chip-score"><strong id="cp-ops-score">0</strong> OPS <em id="cp-ops-rank">Observer</em></span>
+      <button id="cp-open-maplibre" class="cp-meta-chip cp-meta-btn" type="button" title="Open UK rail vector mode">UK Rail Vector</button>
+    </div>
 
     <div class="cp-body" id="cp-body">
       <!-- Tabs -->
-      <div class="cp-tabs">
-        <button class="cp-tab active" data-tab="search" title="Search companies and people">Search</button>
-        <button class="cp-tab" data-tab="entities" title="Add custom entities to map">Entities</button>
-        <button class="cp-tab" data-tab="layers" title="Toggle map layers and base map">Layers</button>
+      <div class="cp-tabs" role="tablist" aria-label="Control panel sections">
+        <button id="cp-tab-btn-search" class="cp-tab active" data-tab="search" title="Search companies and people" role="tab" aria-controls="tab-search" aria-selected="true" tabindex="0">Search</button>
+        <button id="cp-tab-btn-entities" class="cp-tab" data-tab="entities" title="Add custom entities to map" role="tab" aria-controls="tab-entities" aria-selected="false" tabindex="-1">Entities</button>
+        <button id="cp-tab-btn-layers" class="cp-tab" data-tab="layers" title="Toggle map layers and base map" role="tab" aria-controls="tab-layers" aria-selected="false" tabindex="-1">Layers</button>
       </div>
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Company Search Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
-      <div class="cp-tab-pane active" id="tab-search">
+      <div class="cp-tab-pane active" id="tab-search" role="tabpanel" aria-labelledby="cp-tab-btn-search" aria-hidden="false">
         <div id="data-progress" class="cp-progress done">
           <div class="cp-progress-label">
             <span id="progress-text">Searching...</span>
@@ -58,6 +65,13 @@
             <div class="cp-progress-fill" id="progress-fill"></div>
           </div>
         </div>
+
+        <div class="cp-quick-actions" aria-label="Search quick actions">
+          <button id="quick-search-company" class="quick-action-btn" type="button">Company Search</button>
+          <button id="quick-search-officer" class="quick-action-btn" type="button">Officer / PSC</button>
+          <button id="quick-search-dvla" class="quick-action-btn" type="button">Vehicle Lookup</button>
+        </div>
+        <div class="cp-quick-hint">Tip: Use quick actions to jump to the right tool without scrolling.</div>
 
         <label for="ch_name">Company Name</label>
         <input id="ch_name" type="text" placeholder="e.g. Bristol City" />
@@ -113,6 +127,11 @@
           <button id="ch_clear" class="btn-secondary">Clear</button>
         </div>
 
+        <div id="ch-results-skeleton" class="cp-skeleton-list hidden" aria-hidden="true">
+          <div class="cp-skeleton-row"></div>
+          <div class="cp-skeleton-row"></div>
+          <div class="cp-skeleton-row"></div>
+        </div>
         <div id="ch_results"></div>
 
         <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â QUICK SEARCH (AUTOCOMPLETE) Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
@@ -156,6 +175,11 @@
             Enter a person's name to search officer appointments, or a company number to view PSC records with PDF download.
           </div>
 
+          <div id="psc-results-skeleton" class="cp-skeleton-list hidden" aria-hidden="true">
+            <div class="cp-skeleton-row"></div>
+            <div class="cp-skeleton-row"></div>
+            <div class="cp-skeleton-row"></div>
+          </div>
           <div id="psc_results"></div>
         </details>
 
@@ -178,7 +202,14 @@
       </div>
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Entities Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
-      <div class="cp-tab-pane" id="tab-entities">
+      <div class="cp-tab-pane" id="tab-entities" role="tabpanel" aria-labelledby="cp-tab-btn-entities" aria-hidden="true">
+        <div class="cp-quick-actions" aria-label="Entity quick actions">
+          <button id="quick-entity-place" class="quick-action-btn" type="button">Place Entity</button>
+          <button id="quick-entity-import" class="quick-action-btn" type="button">Import File</button>
+          <button id="quick-entity-export" class="quick-action-btn" type="button">Export Excel</button>
+        </div>
+        <div class="cp-quick-hint">Use drag-and-drop import for fast demos, then refine with manual links.</div>
+
         <div class="entity-help">
           <strong>Entity Placement + i2 Workspace</strong>
           <p><strong>To place:</strong> Click a category below -> click on map -> enter details (name, address, notes)</p>
@@ -253,7 +284,32 @@
       </div>
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Layers Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
-      <div class="cp-tab-pane" id="tab-layers">
+      <div class="cp-tab-pane" id="tab-layers" role="tabpanel" aria-labelledby="cp-tab-btn-layers" aria-hidden="true">
+        <div class="cp-quick-actions" aria-label="Layer quick actions">
+          <button id="quick-layer-underground" class="quick-action-btn" type="button">Toggle TfL</button>
+          <button id="quick-layer-flights" class="quick-action-btn" type="button">Toggle Flights</button>
+          <button id="quick-layer-health" class="quick-action-btn" type="button">Refresh Health</button>
+          <button id="quick-layer-maplibre" class="quick-action-btn" type="button">UK Rail Vector</button>
+        </div>
+        <div class="cp-quick-hint">Layers load on demand. Turn on only what you need for smoother map performance.</div>
+
+        <div class="layer-section-title">Layer Presets</div>
+        <div class="cp-btn-row">
+          <button id="layer-preset-transport" class="btn-secondary" type="button">Transport Focus</button>
+          <button id="layer-preset-intel" class="btn-secondary" type="button">Intel Focus</button>
+          <button id="layer-preset-clear" class="btn-secondary" type="button">Clear All</button>
+        </div>
+        <div class="cp-quick-hint">Presets toggle multiple layers in one click. You can still fine-tune manually.</div>
+
+        <details class="panel-disclosure" id="maplibre-bridge-block">
+          <summary>UK Rail Vector Bridge</summary>
+          <div class="psc-help-text">
+            Open the MapLibre UK rail vector view using your current map position and zoom for a cleaner nationwide rail picture.
+          </div>
+          <div class="cp-btn-row">
+            <button id="open-maplibre-rail-btn" class="btn-primary" type="button">Open UK Rail Vector View</button>
+          </div>
+        </details>
 
         <div class="layer-section-title">Base Map</div>
         <div class="base-pills" id="base-pills">
@@ -286,7 +342,7 @@
           <span class="layer-name">Global Airports</span>
         </label>
 
-        <details class="panel-disclosure layer-tool-block" open>
+        <details class="panel-disclosure layer-tool-block">
           <summary>Airport Finder</summary>
           <div class="airport-tools">
             <label for="airport-search-q">Airport (IATA / ICAO / Name / City)</label>
@@ -509,7 +565,7 @@
 
   <!-- Status bar -->
   <div id="status-bar">
-    <span id="status-text">Initialising...</span>
+    <span id="status-text" role="status" aria-live="polite">Initialising...</span>
     <div id="status-health-mini" class="status-health-mini">
       <span class="status-health-chip">Health: checking...</span>
     </div>
@@ -573,6 +629,7 @@
 
   <div id="map"></div>
   <button id="mobile-panel-toggle" class="mobile-panel-toggle" type="button" title="Toggle control panel">Panel</button>
+  <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>

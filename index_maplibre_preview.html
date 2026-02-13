@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Control Room - MapLibre Preview</title>
+
+    <link href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css" rel="stylesheet">
+    <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+
+    <style>
+        body { margin:0; padding:0; font-family: "Segoe UI", Tahoma, sans-serif; }
+        #map { width:100%; height:100vh; }
+        .preview-controls {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 5;
+            width: min(340px, calc(100vw - 24px));
+            background: rgba(12, 19, 26, 0.92);
+            border: 1px solid rgba(56, 189, 248, 0.34);
+            border-radius: 10px;
+            color: #dbeafe;
+            padding: 10px 12px;
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+        }
+        .preview-title {
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            color: #7dd3fc;
+        }
+        .preview-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .preview-row label { font-size: 12px; }
+        .preview-status {
+            font-size: 11px;
+            line-height: 1.4;
+            color: #bfdbfe;
+            background: rgba(15, 23, 42, 0.55);
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            border-radius: 7px;
+            padding: 7px 8px;
+            margin-bottom: 8px;
+        }
+        .preview-note {
+            font-size: 10px;
+            color: #93c5fd;
+            line-height: 1.4;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="preview-controls">
+        <div class="preview-title">MapLibre Rail Overlay</div>
+        <div class="preview-row">
+            <input id="rail-vector-toggle" type="checkbox" checked />
+            <label for="rail-vector-toggle">Rail (OpenRailwayMap Vector Tiles)</label>
+        </div>
+        <div id="rail-status" class="preview-status">Loading rail vector overlay...</div>
+        <div class="preview-note">
+            Source: OpenRailwayMap-vector. Display constrained to the UK.
+        </div>
+    </div>
+    <div id="map"></div>
+
+    <script>
+    const ormConfig = {
+        baseStyle: "http://localhost:8080/styles/basic-preview/style.json",
+        sourceBase: "https://openrailwaymap.app",
+        lowSourcePath: "/standard_railway_line_low",
+        highSourcePath: "/railway_line_high"
+    };
+    const ukBounds = [
+        [-11.5, 49.5],
+        [2.8, 61.2]
+    ];
+    const ukRailFilterPolygon = {
+        type: "Polygon",
+        coordinates: [[
+            [-11.5, 49.5],
+            [2.8, 49.5],
+            [2.8, 61.2],
+            [-11.5, 61.2],
+            [-11.5, 49.5]
+        ]]
+    };
+
+    const railLayerIds = {
+        low: "cr-orm-rail-low",
+        high: "cr-orm-rail-high"
+    };
+
+    const railSourceIds = {
+        low: "cr-orm-rail-low-src",
+        high: "cr-orm-rail-high-src"
+    };
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedLng = Number(searchParams.get("lng"));
+    const requestedLat = Number(searchParams.get("lat"));
+    const requestedZoom = Number(searchParams.get("z"));
+    const hasRequestedView =
+        Number.isFinite(requestedLng) &&
+        Number.isFinite(requestedLat) &&
+        Number.isFinite(requestedZoom);
+    const startCenter = hasRequestedView ? [requestedLng, requestedLat] : [-2.5879, 51.4545];
+    const startZoom = hasRequestedView ? Math.max(5, Math.min(13, requestedZoom)) : 6;
+
+    let railOverlayHealthy = true;
+
+    function setRailStatus(message, kind = "info") {
+        const el = document.getElementById("rail-status");
+        if (!el) return;
+        el.textContent = message;
+        if (kind === "error") {
+            el.style.borderColor = "rgba(239,68,68,0.45)";
+            el.style.color = "#fecaca";
+        } else if (kind === "ok") {
+            el.style.borderColor = "rgba(34,197,94,0.38)";
+            el.style.color = "#bbf7d0";
+        } else {
+            el.style.borderColor = "rgba(148, 163, 184, 0.28)";
+            el.style.color = "#bfdbfe";
+        }
+    }
+
+    function railVisibilityMode(enabled) {
+        return enabled ? "visible" : "none";
+    }
+
+    function setRailOverlayVisible(enabled) {
+        for (const id of Object.values(railLayerIds)) {
+            if (!map.getLayer(id)) continue;
+            map.setLayoutProperty(id, "visibility", railVisibilityMode(enabled && railOverlayHealthy));
+        }
+        if (!railOverlayHealthy) {
+            setRailStatus("Rail vector source unavailable. Overlay disabled.", "error");
+        } else if (enabled) {
+            setRailStatus("Rail vector overlay active.", "ok");
+        } else {
+            setRailStatus("Rail vector overlay hidden.", "info");
+        }
+    }
+
+    async function pingRailSource() {
+        const url = `${ormConfig.sourceBase}${ormConfig.highSourcePath}`;
+        try {
+            const resp = await fetch(url, { method: "GET" });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    async function addRailOverlay() {
+        const sourceReachable = await pingRailSource();
+        if (!sourceReachable) {
+            railOverlayHealthy = false;
+            setRailStatus("Rail vector endpoint did not respond. Base map only.", "error");
+            return;
+        }
+
+        map.addSource(railSourceIds.low, {
+            type: "vector",
+            url: `${ormConfig.sourceBase}${ormConfig.lowSourcePath}`
+        });
+
+        map.addSource(railSourceIds.high, {
+            type: "vector",
+            url: `${ormConfig.sourceBase}${ormConfig.highSourcePath}`
+        });
+
+        map.addLayer({
+            id: railLayerIds.low,
+            type: "line",
+            source: railSourceIds.low,
+            "source-layer": "standard_railway_line_low",
+            minzoom: 0,
+            maxzoom: 9,
+            filter: ["within", ukRailFilterPolygon],
+            paint: {
+                "line-color": "#60a5fa",
+                "line-opacity": 0.86,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    3, 1.0,
+                    6, 1.7,
+                    9, 2.4
+                ]
+            }
+        });
+
+        map.addLayer({
+            id: railLayerIds.high,
+            type: "line",
+            source: railSourceIds.high,
+            "source-layer": "railway_line_high",
+            minzoom: 7,
+            filter: ["within", ukRailFilterPolygon],
+            paint: {
+                "line-color": [
+                    "match",
+                    ["get", "railway"],
+                    "rail", "#38bdf8",
+                    "light_rail", "#22d3ee",
+                    "subway", "#0ea5e9",
+                    "tram", "#67e8f9",
+                    "#60a5fa"
+                ],
+                "line-opacity": 0.92,
+                "line-width": [
+                    "interpolate", ["linear"], ["zoom"],
+                    7, 1.2,
+                    10, 2.0,
+                    13, 3.0,
+                    16, 4.2
+                ]
+            }
+        });
+
+        railOverlayHealthy = true;
+        setRailStatus("Rail vector overlay loaded and ready.", "ok");
+        setRailOverlayVisible(document.getElementById("rail-vector-toggle")?.checked !== false);
+    }
+
+    const map = new maplibregl.Map({
+        container: "map",
+        style: ormConfig.baseStyle,
+        center: startCenter,
+        zoom: startZoom,
+        minZoom: 5,
+        maxZoom: 20,
+        maxBounds: ukBounds
+    });
+
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+    map.addControl(new maplibregl.AttributionControl({
+        compact: true,
+        customAttribution: '<a href="https://github.com/hiddewie/OpenRailwayMap-vector" target="_blank" rel="noopener noreferrer">OpenRailwayMap-vector</a> | <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>'
+    }));
+
+    map.on("load", async () => {
+        if (!hasRequestedView) {
+            map.fitBounds(ukBounds, { padding: 28, duration: 0 });
+        }
+        await addRailOverlay();
+    });
+
+    map.on("error", (ev) => {
+        const sourceId = String(ev?.error?.sourceId || "");
+        if (!sourceId.includes("cr-orm-rail")) return;
+        railOverlayHealthy = false;
+        setRailOverlayVisible(false);
+    });
+
+    document.getElementById("rail-vector-toggle")?.addEventListener("change", (e) => {
+        setRailOverlayVisible(!!e.target.checked);
+    });
+    </script>
+</body>
+</html>
