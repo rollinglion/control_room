@@ -125,6 +125,7 @@ async function runDvlaLookup() {
     DVLA_STATE.lastResult = vehicle;
     renderDvlaResult(vehicle);
     setStatus(`DVLA record loaded: ${vehicle.registrationNumber || vrm}`);
+    if (window.CRDashboard) window.CRDashboard.addSearchHistory("dvla", vrm, 1, { make: vehicle.make, model: vehicle.model });
   } catch (err) {
     const msg = String(err?.message || err);
     if (wrap) wrap.innerHTML = `<div class="nr-alert">DVLA lookup failed: ${escapeHtml(msg)}</div>`;

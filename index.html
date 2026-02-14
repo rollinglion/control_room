@@ -37,29 +37,67 @@
       throw new Error("Control Room must run over http://localhost:8000, not file://");
     })();
 
-    (function routeMapEngine() {
-      try {
-        const qs = new URLSearchParams(window.location.search);
-        const mode = String(qs.get("map") || "").toLowerCase();
-        if (mode !== "maplibre") return;
-        qs.delete("map");
-        const suffix = qs.toString();
-        const target = "index_maplibre_preview.html" + (suffix ? ("?" + suffix) : "");
-        window.location.replace(target);
-      } catch (_) {
-        // keep default app path on parser errors
-      }
-    })();
   </script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <link rel="stylesheet" href="css/style.css">
+  <!-- vis-network for link analysis graph -->
+  <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
+  <!-- ═══ KPI DASHBOARD STRIP ═══ -->
+  <div id="kpi-bar" class="kpi-bar">
+    <div class="kpi-brand">
+      <span class="kpi-brand-title">CONTROL ROOM</span>
+      <span class="kpi-brand-sub">Intelligence Dashboard</span>
+    </div>
+    <div class="kpi-separator"></div>
+    <div class="kpi-grid">
+      <div class="kpi-card" title="Map entities placed">
+        <span class="kpi-value" id="kpi-entities">0</span>
+        <span class="kpi-label">Entities</span>
+      </div>
+      <div class="kpi-card" title="Entity connections">
+        <span class="kpi-value" id="kpi-connections">0</span>
+        <span class="kpi-label">Links</span>
+      </div>
+      <div class="kpi-card" title="Active overlay layers">
+        <span class="kpi-value" id="kpi-layers">0</span>
+        <span class="kpi-label">Layers</span>
+      </div>
+      <div class="kpi-card" title="Searches performed">
+        <span class="kpi-value" id="kpi-searches">0</span>
+        <span class="kpi-label">Searches</span>
+      </div>
+      <div class="kpi-card kpi-card-alert" title="Alert events">
+        <span class="kpi-value" id="kpi-alerts">0</span>
+        <span class="kpi-label">Alerts</span>
+      </div>
+      <div class="kpi-card kpi-card-ops" title="Operational complexity score">
+        <span class="kpi-value" id="kpi-ops-score">0</span>
+        <span class="kpi-label">OPS</span>
+      </div>
+    </div>
+    <div class="kpi-separator"></div>
+    <div class="kpi-live-info">
+      <span class="kpi-clock" id="kpi-clock">--:--:--</span>
+      <span class="kpi-coords" id="kpi-coords" title="Map centre coordinates">--</span>
+      <span class="kpi-zoom" id="kpi-zoom" title="Zoom level">Z--</span>
+    </div>
+    <div class="kpi-separator"></div>
+    <div class="kpi-actions">
+      <button class="kpi-action-btn" id="kpi-btn-save" title="Save workspace (Ctrl+S)">Save</button>
+      <button class="kpi-action-btn kpi-action-intel" id="kpi-btn-report" title="3x5x2 Intelligence Report (Ctrl+Shift+R)">3x5x2</button>
+      <button class="kpi-action-btn" id="kpi-btn-anx" title="Export i2 ANX (Ctrl+Shift+X)">i2 ANX</button>
+      <button class="kpi-action-btn" id="kpi-btn-excel" title="Export structured Excel">Excel</button>
+      <button class="kpi-action-btn kpi-action-help" id="kpi-btn-help" title="Keyboard shortcuts (F1)">F1</button>
+    </div>
+  </div>
+
   <div id="control-panel">
     <div class="cp-header">
-      <span class="cp-title">CONTROL ROOM</span>
+      <span class="cp-title">OPERATIONS</span>
       <div class="cp-header-actions">
         <button id="cp-menu-btn" class="cp-menu-btn" type="button" title="Open panel menu">Menu</button>
         <div id="cp-menu" class="cp-menu hidden" role="menu" aria-hidden="true">
@@ -75,7 +113,6 @@
       <span class="cp-meta-chip"><strong id="cp-entities-chip">0</strong> Entities</span>
       <span class="cp-meta-chip"><strong id="cp-links-chip">0</strong> Links</span>
       <span class="cp-meta-chip cp-meta-chip-score"><strong id="cp-ops-score">0</strong> OPS <em id="cp-ops-rank">Observer</em></span>
-      <button id="cp-open-maplibre" class="cp-meta-chip cp-meta-btn" type="button" title="Open UK rail vector mode">UK Rail Vector</button>
     </div>
 
     <div class="cp-body" id="cp-body">
@@ -215,6 +252,45 @@
           <div id="psc_results"></div>
         </details>
 
+        <details class="panel-disclosure" id="land-registry-block">
+          <summary>Land Registry (Price Paid)</summary>
+          <label for="lr-postcode">Postcode</label>
+          <div class="roads-row">
+            <input id="lr-postcode" type="text" placeholder="e.g. SW1A 1AA" />
+            <button id="lr-search-btn" class="btn-primary btn-sm" type="button">Search</button>
+          </div>
+          <div class="psc-help-text">
+            Queries HM Land Registry Price Paid Data. Shows recent property transactions at a postcode.
+          </div>
+          <div id="lr-results" class="nr-results"></div>
+        </details>
+
+        <details class="panel-disclosure" id="disqualified-directors-block">
+          <summary>Disqualified Directors</summary>
+          <label for="dq-name">Director Name</label>
+          <div class="roads-row">
+            <input id="dq-name" type="text" placeholder="e.g. John Smith" />
+            <button id="dq-search-btn" class="btn-primary btn-sm" type="button">Search</button>
+          </div>
+          <div class="psc-help-text">
+            Searches Companies House disqualified officers register.
+          </div>
+          <div id="dq-results" class="nr-results"></div>
+        </details>
+
+        <details class="panel-disclosure" id="charity-block">
+          <summary>Charity Commission</summary>
+          <label for="charity-name">Charity Name</label>
+          <div class="roads-row">
+            <input id="charity-name" type="text" placeholder="e.g. British Red Cross" />
+            <button id="charity-search-btn" class="btn-primary btn-sm" type="button">Search</button>
+          </div>
+          <div class="psc-help-text">
+            Searches the Charity Commission register for England & Wales.
+          </div>
+          <div id="charity-results" class="nr-results"></div>
+        </details>
+
         <details class="panel-disclosure" id="dvla-ops-block">
           <summary>DVLA Vehicle Lookup</summary>
           <label for="dvla-vrm-input">Registration Number (VRM)</label>
@@ -282,6 +358,55 @@
           </div>
         </div>
 
+        <details class="panel-disclosure">
+          <summary>Search History &amp; Bookmarks</summary>
+          <div id="search-history-list" class="search-history-list">
+            <div class="activity-empty">No search history yet.</div>
+          </div>
+        </details>
+
+        <details class="panel-disclosure">
+          <summary>Workspace Manager</summary>
+          <div class="ws-controls">
+            <div class="roads-row">
+              <input id="ws-name-input" type="text" placeholder="Workspace name" value="default" />
+              <button id="ws-save-btn" class="btn-primary btn-sm" type="button">Save</button>
+            </div>
+            <div class="cp-btn-row">
+              <button id="ws-quicksave-btn" class="btn-secondary btn-sm" type="button">Quick Save</button>
+              <button id="ws-quickload-btn" class="btn-secondary btn-sm" type="button">Quick Load</button>
+            </div>
+            <div class="psc-help-text">
+              Save/restore your entire workspace: entities, connections, map position, layers. Auto-saves every 2 minutes.
+            </div>
+          </div>
+          <div id="workspace-list" class="workspace-list">
+            <div class="activity-empty">No saved workspaces.</div>
+          </div>
+        </details>
+
+        <details class="panel-disclosure">
+          <summary>Data Sources Available</summary>
+          <div class="data-sources-grid">
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Companies House</span><span class="ds-badge">API</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">PSC Register</span><span class="ds-badge">API</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Land Registry</span><span class="ds-badge">API</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Charity Commission</span><span class="ds-badge">API</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">DVLA VES</span><span class="ds-badge">PROXY</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">TfL Unified</span><span class="ds-badge">API</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">FlightRadar24</span><span class="ds-badge">LIVE</span></div>
+            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">National Rail</span><span class="ds-badge">STATIC</span></div>
+            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">PNC</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
+            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">PND</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
+            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">SARs / ELMER</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
+            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">Experian</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
+            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">GB Connexus</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
+          </div>
+          <div class="psc-help-text">
+            Open sources connect via API. Restricted sources are available for manual entry in 3x5x2 intelligence reports only.
+          </div>
+        </details>
+
         <details class="panel-disclosure" id="entities-i2-workspace">
           <summary>i2 Planning Workspace</summary>
           <div class="i2-stats-grid">
@@ -321,7 +446,6 @@
           <button id="quick-layer-underground" class="quick-action-btn" type="button">Toggle TfL</button>
           <button id="quick-layer-flights" class="quick-action-btn" type="button">Toggle Flights</button>
           <button id="quick-layer-health" class="quick-action-btn" type="button">Refresh Health</button>
-          <button id="quick-layer-maplibre" class="quick-action-btn" type="button">UK Rail Vector</button>
         </div>
         <div class="cp-quick-hint">Layers load on demand. Turn on only what you need for smoother map performance.</div>
 
@@ -333,16 +457,6 @@
         </div>
         <div class="cp-quick-hint">Presets toggle multiple layers in one click. You can still fine-tune manually.</div>
 
-        <details class="panel-disclosure" id="maplibre-bridge-block">
-          <summary>UK Rail Vector Bridge</summary>
-          <div class="psc-help-text">
-            Open the MapLibre UK rail vector view using your current map position and zoom for a cleaner nationwide rail picture.
-          </div>
-          <div class="cp-btn-row">
-            <button id="open-maplibre-rail-btn" class="btn-primary" type="button">Open UK Rail Vector View</button>
-          </div>
-        </details>
-
         <div class="layer-section-title">Base Map</div>
         <div class="base-pills" id="base-pills">
           <button class="bl-pill active" data-base="Dark">Dark</button>
@@ -351,28 +465,89 @@
           <button class="bl-pill" data-base="Satellite">Satellite</button>
         </div>
 
-        <div class="layer-section-title">Data Overlays</div>
+        <div class="layer-section-title">Overlay Groups</div>
 
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="areas">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#818cf8"></span>
-          <span class="layer-name">Police Force Areas</span>
-        </label>
+        <details class="panel-disclosure" open>
+          <summary>Transport</summary>
 
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="airports_uk">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#38bdf8"></span>
-          <span class="layer-name">UK Airports</span>
-        </label>
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="underground">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#f43f5e"></span>
+            <span class="layer-name">TfL Stations (Underground, DLR, Tram, Rail)</span>
+          </label>
 
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="airports_global">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#0284c7"></span>
-          <span class="layer-name">Global Airports</span>
-        </label>
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="national_rail">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#38bdf8"></span>
+            <span class="layer-name">National Rail Stations (GB)</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="service_stations">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#facc15"></span>
+            <span class="layer-name">Service Stations (Fuel/EV)</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="bikes">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#22c55e"></span>
+            <span class="layer-name">Santander Cycles</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="seaports">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#2dd4bf"></span>
+            <span class="layer-name">Seaports</span>
+          </label>
+        </details>
+
+        <details class="panel-disclosure">
+          <summary>Aviation</summary>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="airports_uk">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#38bdf8"></span>
+            <span class="layer-name">UK Airports</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="airports_global">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#0284c7"></span>
+            <span class="layer-name">Global Airports</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="flights">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#f59e0b"></span>
+            <span class="layer-name">Live Flights (FlightRadar24)</span>
+          </label>
+        </details>
+
+        <details class="panel-disclosure">
+          <summary>Intel & Core</summary>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="areas">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#818cf8"></span>
+            <span class="layer-name">Police Force Areas</span>
+          </label>
+
+          <label class="layer-row">
+            <input type="checkbox" class="layer-cb" data-layer="companies" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#a78bfa"></span>
+            <span class="layer-name">Companies (search)</span>
+          </label>
+        </details>
 
         <details class="panel-disclosure layer-tool-block">
           <summary>Airport Finder</summary>
@@ -388,36 +563,6 @@
             <div id="airport-search-results" class="airport-results"></div>
           </div>
         </details>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="seaports">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#2dd4bf"></span>
-          <span class="layer-name">Seaports</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="underground">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#f43f5e"></span>
-          <span class="layer-name">TfL Stations (Underground, DLR, Tram, Rail)</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="companies" checked>
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#a78bfa"></span>
-          <span class="layer-name">Companies (search)</span>
-        </label>
-
-        <div class="layer-section-title">Live Data</div>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="flights">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#f59e0b"></span>
-          <span class="layer-name">Live Flights (FlightRadar24)</span>
-        </label>
 
         <details class="panel-disclosure layer-tool-block" data-layer-tools="flights">
           <summary>Flight Intelligence Filters</summary>
@@ -461,47 +606,35 @@
           </div>
         </details>
 
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="bikes">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#22c55e"></span>
-          <span class="layer-name">Santander Cycles</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="national_rail">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#38bdf8"></span>
-          <span class="layer-name">National Rail (Live Boards)</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="roads">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#f97316"></span>
-          <span class="layer-name">Road Traffic (WebTRIS)</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="service_stations">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#facc15"></span>
-          <span class="layer-name">Service Stations (Fuel/EV)</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="os_roads">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#fb923c"></span>
-          <span class="layer-name">OS Major Roads</span>
-        </label>
-
-        <label class="layer-row">
-          <input type="checkbox" class="layer-cb" data-layer="os_rail">
-          <span class="toggle-track"><span class="toggle-thumb"></span></span>
-          <span class="layer-dot" style="background:#60a5fa"></span>
-          <span class="layer-name">Open UK Rail Vector View</span>
-        </label>
+        <details class="panel-disclosure layer-tool-block" data-layer-tools="service_stations">
+          <summary>Service Station Filters</summary>
+          <div class="service-filter-tools">
+            <label class="inline-checkbox">
+              <input id="ss-filter-fuel" type="checkbox" checked />
+              Fuel
+            </label>
+            <label class="inline-checkbox">
+              <input id="ss-filter-charging" type="checkbox" checked />
+              EV Charging
+            </label>
+            <label class="inline-checkbox">
+              <input id="ss-filter-vehicle" type="checkbox" checked />
+              Repair / Wash
+            </label>
+            <label class="inline-checkbox">
+              <input id="ss-filter-truck" type="checkbox" checked />
+              Truck Stops
+            </label>
+            <label class="inline-checkbox">
+              <input id="ss-filter-general" type="checkbox" checked />
+              Other
+            </label>
+            <div class="cp-btn-row">
+              <button id="ss-filter-all-btn" class="btn-secondary btn-sm" type="button">All</button>
+              <button id="ss-filter-none-btn" class="btn-secondary btn-sm" type="button">None</button>
+            </div>
+          </div>
+        </details>
 
         <details class="panel-disclosure layer-tool-block" data-layer-tools="underground">
           <summary>
@@ -530,7 +663,6 @@
               <option value="dlr">DLR</option>
               <option value="tram">Tram</option>
               <option value="bus">Bus</option>
-              <option value="national-rail">National Rail</option>
             </select>
 
             <div class="tfl-stop-row">
@@ -544,56 +676,27 @@
         <details class="panel-disclosure layer-tool-block" data-layer-tools="national_rail">
           <summary>National Rail Ops</summary>
           <div class="nr-tools">
-            <label for="nr-crs-input">CRS Station Code</label>
-          <div class="nr-row">
-            <input id="nr-crs-input" type="text" list="nr-crs-list" placeholder="Type station or CRS (e.g. KGX, Kings Cross)" />
-            <button id="nr-fetch-btn" class="btn-secondary btn-sm" type="button">Fetch</button>
-          </div>
-          <datalist id="nr-crs-list"></datalist>
-
-            <label for="nr-board-type">Board Type</label>
-            <select id="nr-board-type">
-              <option value="departures">Departures</option>
-              <option value="arrivals">Arrivals</option>
-            </select>
-
+            <label for="nr-station-query">Station / CRS</label>
             <div class="nr-row">
-              <button id="nr-refresh-btn" class="btn-secondary btn-sm" type="button">Refresh</button>
-              <button id="nr-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
-            </div>
-            <div id="nr-results" class="nr-results"></div>
-
-            <div class="nr-row" style="margin-top:10px;">
-              <button id="raildata-disruptions-btn" class="btn-secondary btn-sm" type="button">Disruptions</button>
-              <button id="raildata-performance-btn" class="btn-secondary btn-sm" type="button">Performance</button>
-              <button id="raildata-reference-btn" class="btn-secondary btn-sm" type="button">Reference</button>
+              <input id="nr-station-query" type="text" placeholder="e.g. Kings Cross or KGX" />
+              <button id="nr-station-search-btn" class="btn-secondary btn-sm" type="button">Search</button>
             </div>
             <div class="nr-row">
-              <button id="raildata-naptan-btn" class="btn-secondary btn-sm" type="button">NaPTAN</button>
-              <button id="raildata-nptg-btn" class="btn-secondary btn-sm" type="button">NPTG</button>
-              <button id="raildata-feeds-btn" class="btn-secondary btn-sm" type="button">My Feeds</button>
+              <button id="nr-station-nearby-btn" class="btn-secondary btn-sm" type="button">Nearby (Map Center)</button>
+              <button id="nr-station-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
             </div>
-            <div id="raildata-results" class="nr-results"></div>
-          </div>
-        </details>
-
-        <details class="panel-disclosure layer-tool-block" data-layer-tools="roads">
-          <summary>Road Traffic Ops (WebTRIS)</summary>
-          <div class="roads-tools">
-            <label for="roads-site-query">Site Search (ID / Name / Road)</label>
-            <div class="roads-row">
-              <input id="roads-site-query" type="text" placeholder="e.g. M25, A1M, site id 2" />
-              <button id="roads-site-search-btn" class="btn-secondary btn-sm" type="button">Search</button>
+            <div id="nr-selected-line" class="nr-selected-line">Selected Major Line: None</div>
+            <div class="cp-btn-row">
+              <button id="nr-mode-major-btn" class="btn-secondary btn-sm" type="button">Major Only</button>
+              <button id="nr-mode-minor-btn" class="btn-secondary btn-sm" type="button">Minor Only</button>
+              <button id="nr-mode-all-net-btn" class="btn-secondary btn-sm" type="button">All</button>
             </div>
-
-            <label for="roads-date">Report Date</label>
-            <input id="roads-date" type="date" />
-
-            <div class="roads-row">
-              <button id="roads-refresh-btn" class="btn-secondary btn-sm" type="button">Refresh</button>
-              <button id="roads-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
+            <div class="cp-btn-row">
+              <button id="nr-line-all-btn" class="btn-secondary btn-sm" type="button">All Lines</button>
+              <button id="nr-line-none-btn" class="btn-secondary btn-sm" type="button">No Lines</button>
             </div>
-            <div id="roads-results" class="roads-results"></div>
+            <div id="nr-major-line-grid" class="nr-major-line-grid"></div>
+            <div id="nr-station-results" class="nr-results"></div>
           </div>
         </details>
 
@@ -604,7 +707,13 @@
 
   <!-- Status bar -->
   <div id="status-bar">
-    <span id="status-text" role="status" aria-live="polite">Initialising...</span>
+    <div class="status-left">
+      <span class="status-indicator" id="status-indicator"></span>
+      <span id="status-text" role="status" aria-live="polite">Initialising...</span>
+    </div>
+    <div class="status-center">
+      <span class="status-session-chip" id="status-session">Session: 0m</span>
+    </div>
     <div id="status-health-mini" class="status-health-mini">
       <span class="status-health-chip">Health: checking...</span>
     </div>
@@ -667,6 +776,39 @@
   </div>
 
   <div id="map"></div>
+
+  <!-- ═══ BOTTOM ANALYSIS PANEL ═══ -->
+  <div id="bottom-panel" class="bottom-panel">
+    <div class="bp-header">
+      <div class="bp-tabs">
+        <button class="bp-tab-btn" data-bp-target="graph" title="Network Graph (Ctrl+G)">Link Analysis</button>
+        <button class="bp-tab-btn" data-bp-target="timeline" title="Timeline (Ctrl+T)">Timeline</button>
+        <button class="bp-tab-btn" data-bp-target="activity" title="Activity Log (Ctrl+H)">Activity</button>
+      </div>
+      <div class="bp-header-right">
+        <div id="graph-stats" class="bp-stats"></div>
+        <div id="timeline-stats" class="bp-stats" style="display:none"></div>
+        <button class="bp-close-btn" id="bp-close-btn" title="Close panel">&times;</button>
+      </div>
+    </div>
+    <div class="bp-body">
+      <!-- Graph Tab -->
+      <div class="bp-tab-pane" data-bp-tab="graph">
+        <div id="graph-toolbar" class="graph-toolbar"></div>
+        <div id="network-graph-container" class="network-graph-container"></div>
+      </div>
+      <!-- Timeline Tab -->
+      <div class="bp-tab-pane" data-bp-tab="timeline">
+        <div id="timeline-toolbar" class="graph-toolbar"></div>
+        <div id="timeline-container" class="timeline-container"></div>
+      </div>
+      <!-- Activity Tab -->
+      <div class="bp-tab-pane" data-bp-tab="activity">
+        <div id="activity-log-list" class="activity-log-list"></div>
+      </div>
+    </div>
+  </div>
+
   <button id="mobile-panel-toggle" class="mobile-panel-toggle" type="button" title="Toggle control panel">Panel</button>
   <div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
 
@@ -694,12 +836,121 @@
 
   <!-- Live Data Layers -->
   <script src="js/tfl_live.js"></script>
-  <script src="js/national_rail.js"></script>
-  <script src="js/roads_live.js"></script>
+  <script src="js/national_rail_live.js"></script>
   <script src="js/flights.js"></script>
   <script src="js/dvla.js"></script>
   <script src="js/system_health.js"></script>
   <script src="js/i2_workspace.js"></script>
+
+  <!-- Intelligence Dashboard Modules -->
+  <script src="js/dashboard.js"></script>
+  <script src="js/network_graph.js"></script>
+  <script src="js/timeline.js"></script>
+  <script src="js/context_menu.js"></script>
+  <script src="js/intel_export.js"></script>
+
+  <!-- Wire KPI bar action buttons -->
+  <script>
+    document.getElementById("kpi-btn-save")?.addEventListener("click", () => {
+      if (window.CRDashboard) window.CRDashboard.saveWorkspace("quicksave");
+    });
+    document.getElementById("kpi-btn-report")?.addEventListener("click", () => {
+      if (typeof window.generate3x5x2Report === "function") window.generate3x5x2Report();
+    });
+    document.getElementById("kpi-btn-anx")?.addEventListener("click", () => {
+      if (typeof window.exportI2ANX === "function") window.exportI2ANX();
+    });
+    document.getElementById("kpi-btn-excel")?.addEventListener("click", () => {
+      if (typeof window.exportStructuredExcel === "function") window.exportStructuredExcel();
+    });
+    document.getElementById("kpi-btn-help")?.addEventListener("click", () => {
+      if (window.CRDashboard) window.CRDashboard.showShortcutsOverlay();
+    });
+    // Wire Land Registry search
+    document.getElementById("lr-search-btn")?.addEventListener("click", async () => {
+      const pc = document.getElementById("lr-postcode")?.value?.trim();
+      if (!pc) return;
+      const results = await window.searchLandRegistry(pc);
+      const container = document.getElementById("lr-results");
+      if (!container) return;
+      if (!results.length) { container.innerHTML = '<div class="nr-empty">No transactions found.</div>'; return; }
+      container.innerHTML = results.map(r => `<div class="ch-result-item">
+        <div class="ch-r-name">${r.address || "Unknown"}</div>
+        <div class="ch-r-detail">&pound;${Number(r.price).toLocaleString()} &middot; ${r.date || ""} &middot; ${r.type || ""}</div>
+      </div>`).join("");
+    });
+    // Wire Disqualified Directors search
+    document.getElementById("dq-search-btn")?.addEventListener("click", async () => {
+      const name = document.getElementById("dq-name")?.value?.trim();
+      if (!name) return;
+      const results = await window.searchDisqualifiedDirectors(name);
+      const container = document.getElementById("dq-results");
+      if (!container) return;
+      if (!results.length) { container.innerHTML = '<div class="nr-empty">No disqualified directors found.</div>'; return; }
+      container.innerHTML = results.map(r => `<div class="ch-result-item">
+        <div class="ch-r-name" style="color:#ef4444">${r.name || "Unknown"}</div>
+        <div class="ch-r-detail">DOB: ${r.dateOfBirth || "N/A"} &middot; ${r.address || ""}</div>
+        <div class="ch-r-detail">Disqualified: ${r.disqualifiedFrom || "?"} to ${r.disqualifiedUntil || "?"}</div>
+        ${r.snippet ? `<div class="ch-r-detail" style="color:#fbbf24">${r.snippet}</div>` : ""}
+      </div>`).join("");
+    });
+
+    // Wire Charity Commission search
+    document.getElementById("charity-search-btn")?.addEventListener("click", async () => {
+      const name = document.getElementById("charity-name")?.value?.trim();
+      if (!name) return;
+      const results = await window.searchCharities(name);
+      const container = document.getElementById("charity-results");
+      if (!container) return;
+      if (!results.length) { container.innerHTML = '<div class="nr-empty">No charities found.</div>'; return; }
+      container.innerHTML = results.map(r => `<div class="ch-result-item">
+        <div class="ch-r-name" style="color:#22c55e">${r.name || "Unknown"}</div>
+        <div class="ch-r-detail">Reg: ${r.number || "N/A"} &middot; Status: ${r.status || "Unknown"}</div>
+        ${r.activities ? `<div class="ch-r-detail">${r.activities.slice(0,120)}</div>` : ""}
+      </div>`).join("");
+    });
+
+    // ── Live Clock, Coords & Zoom in KPI bar ──
+    (function initKpiLiveInfo() {
+      function updateClock() {
+        const now = new Date();
+        const el = document.getElementById("kpi-clock");
+        if (el) el.textContent = now.toLocaleTimeString("en-GB", { hour12: false });
+      }
+      updateClock();
+      setInterval(updateClock, 1000);
+
+      // Update coords + zoom on map move
+      function updateMapInfo() {
+        if (!window._map) return;
+        const c = window._map.getCenter();
+        const z = window._map.getZoom();
+        const coordsEl = document.getElementById("kpi-coords");
+        const zoomEl = document.getElementById("kpi-zoom");
+        if (coordsEl) coordsEl.textContent = c.lat.toFixed(4) + ", " + c.lng.toFixed(4);
+        if (zoomEl) zoomEl.textContent = "Z" + z;
+      }
+      // Poll until map is ready, then bind
+      const mapCheck = setInterval(() => {
+        if (window._map) {
+          clearInterval(mapCheck);
+          window._map.on("moveend zoomend", updateMapInfo);
+          updateMapInfo();
+        }
+      }, 500);
+
+      // Update session time in status bar
+      const sessionStart = Date.now();
+      setInterval(() => {
+        const elapsed = Date.now() - sessionStart;
+        const mins = Math.floor(elapsed / 60000);
+        const hrs = Math.floor(mins / 60);
+        const dispMins = mins % 60;
+        const el = document.getElementById("status-session");
+        if (el) el.textContent = "Session: " + (hrs > 0 ? hrs + "h " + dispMins + "m" : dispMins + "m");
+      }, 10000);
+    })();
+  </script>
 
 </body>
 </html>

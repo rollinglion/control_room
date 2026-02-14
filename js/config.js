@@ -41,7 +41,6 @@
     seaports:        "#2dd4bf",
     underground:     "#f43f5e",
     national_rail:   "#38bdf8",
-    roads:           "#f97316",
     flights:         "#f59e0b",
     bikes:           "#22c55e"
   },
@@ -64,21 +63,6 @@
     statusRefresh: 60000,     // 60 seconds
     bikesRefresh: 300000,     // 5 minutes
     arrivalCache: 30000       // cache arrivals for 30s
-  },
-
-  // National Rail (RailData via local/worker proxy)
-  nationalRail: {
-    refreshInterval: 60000,
-    defaultRows: 12
-  },
-
-  // National Highways WebTRIS traffic API (roads)
-  webtris: {
-    baseUrl: "https://webtris.highwaysengland.co.uk/api",
-    version: "v1.0",
-    refreshInterval: 300000, // 5 mins
-    defaultWindowDays: 1,
-    maxPlottedSites: 600
   }
 };
 

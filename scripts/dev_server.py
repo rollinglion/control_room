@@ -1073,7 +1073,7 @@ class Handler(SimpleHTTPRequestHandler):
             crs = ((params.get("crs") or [""])[0]).strip().upper()
             limit_s = ((params.get("limit") or ["20"])[0]).strip()
             try:
-                limit = max(1, min(100, int(limit_s)))
+                limit = max(1, min(5000, int(limit_s)))
             except Exception:
                 limit = 20
             try:

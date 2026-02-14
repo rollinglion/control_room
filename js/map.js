@@ -343,6 +343,7 @@ async function geocodePostcode(rawPostcode) {
 const map = L.map("map", { zoomControl: false }).setView(
   CONTROL_ROOM_CONFIG.map.center, CONTROL_ROOM_CONFIG.map.zoom
 );
+window._map = map;
 
 // Dedicated panes keep routes clickable but below station markers.
 map.createPane("tflRoutesPane");
@@ -546,7 +547,6 @@ const layers = {
   seaports:        L.featureGroup(),
   underground:     L.featureGroup(),
   national_rail:   L.featureGroup(),
-  roads:           L.featureGroup(),
   service_stations: L.markerClusterGroup({
     chunkedLoading: true,
     maxClusterRadius: 42,
@@ -554,7 +554,6 @@ const layers = {
     spiderfyOnMaxZoom: true,
     disableClusteringAtZoom: 12
   }),
-  os_roads:        L.featureGroup(),
   flights:         L.featureGroup(),
   bikes:           L.featureGroup()
 };
@@ -1913,7 +1912,10 @@ function addConnection(fromLatLng, toLatLng, label, type = 'officer', metadata =
   }
   
   updateDashboardCounts();
-  
+
+  // Dashboard activity logging
+  if (window.CRDashboard) window.CRDashboard.logActivity("Connection added", label || type, "connection");
+
   return connectionId;
 }
 
@@ -2654,9 +2656,19 @@ function placeEntity(latLng, iconData, label = '', address = '', notes = '', i2E
   marker.openPopup();
 
   window._mapEntities.push(entity);
-  
+
+  // Right-click context menu for entity
+  marker.on("contextmenu", (e) => {
+    if (typeof window.showEntityContextMenu === "function") {
+      window.showEntityContextMenu(e.originalEvent, entityId);
+    }
+  });
+
   updateDashboardCounts();
-  
+
+  // Dashboard activity logging
+  if (window.CRDashboard) window.CRDashboard.logActivity("Entity placed", label || iconData?.name || "entity", "entity");
+
   return entityId;
 }
 
@@ -2689,6 +2701,7 @@ function removeEntity(entityId) {
     }
     setStatus('Entity removed');
     updateDashboardCounts();
+    if (window.CRDashboard) window.CRDashboard.logActivity("Entity removed", entity.label || entityId, "entity");
   }
 }
 
@@ -3154,6 +3167,9 @@ function updateDashboardCounts() {
     showToast(`Rank up: ${rankBands[rankIndex].label}`, "success", 2200);
   }
   lastOpsRankIndex = rankIndex;
+
+  // Sync KPI bar
+  if (window.CRDashboard) window.CRDashboard.updateKPIs();
 }
 
 // Make functions globally accessible
@@ -3779,7 +3795,9 @@ const OVERLAY_LOAD_STATE = {
   serviceStationsLoaded: false,
   serviceStationsLoading: null,
   undergroundLoaded: false,
-  undergroundLoading: null
+  undergroundLoading: null,
+  nationalRailLoaded: false,
+  nationalRailLoading: null
 };
 
 function resolvePoliceForceName(props = {}) {
@@ -4122,6 +4140,15 @@ function getServiceStationKind(feature = {}) {
   return "general";
 }
 
+const SERVICE_STATION_FILTERS = {
+  fuel: true,
+  charging: true,
+  vehicle: true,
+  truck: true,
+  general: true
+};
+const SERVICE_STATION_MARKERS = []; // { marker, kind }
+
 function serviceStationIcon(kind = "general") {
   const symbol = kind === "fuel" ? "F" :
     kind === "charging" ? "EV" :
@@ -4151,6 +4178,43 @@ function buildServiceStationPopupHtml(feature = {}) {
     (opening ? `<span class="popup-label">Hours</span> ${escapeHtml(opening)}<br>` : "") +
     `<span class="popup-label">Source</span> OSM POI`
   );
+}
+
+function applyServiceStationFilters() {
+  if (!SERVICE_STATION_MARKERS.length) return;
+  let visible = 0;
+  for (const row of SERVICE_STATION_MARKERS) {
+    const marker = row?.marker;
+    const kind = row?.kind || "general";
+    if (!marker) continue;
+    const enabled = !!SERVICE_STATION_FILTERS[kind];
+    const onLayer = layers.service_stations.hasLayer(marker);
+    if (enabled && !onLayer) layers.service_stations.addLayer(marker);
+    if (!enabled && onLayer) layers.service_stations.removeLayer(marker);
+    if (enabled) visible += 1;
+  }
+  if (map.hasLayer(layers.service_stations)) {
+    setStatus(`Service stations visible: ${visible}/${SERVICE_STATION_MARKERS.length}`);
+  }
+}
+
+function syncServiceStationFilterFromUI() {
+  const ids = ["fuel", "charging", "vehicle", "truck", "general"];
+  for (const kind of ids) {
+    const el = document.getElementById(`ss-filter-${kind}`);
+    if (el) SERVICE_STATION_FILTERS[kind] = !!el.checked;
+  }
+  applyServiceStationFilters();
+}
+
+function setServiceStationFiltersAll(enabled) {
+  const ids = ["fuel", "charging", "vehicle", "truck", "general"];
+  for (const kind of ids) {
+    SERVICE_STATION_FILTERS[kind] = !!enabled;
+    const el = document.getElementById(`ss-filter-${kind}`);
+    if (el) el.checked = !!enabled;
+  }
+  applyServiceStationFilters();
 }
 
 async function ensureServiceStationsLoaded() {
@@ -4185,8 +4249,10 @@ async function ensureServiceStationsLoaded() {
         const marker = L.marker([lat, lon], { icon: serviceStationIcon(kind) });
         marker.bindPopup(buildServiceStationPopupHtml(f));
         layers.service_stations.addLayer(marker);
+        SERVICE_STATION_MARKERS.push({ marker, kind });
       });
       OVERLAY_LOAD_STATE.serviceStationsLoaded = true;
+      applyServiceStationFilters();
       setStatus(`Service stations loaded (${selected.length}).`);
       return true;
     })
@@ -4200,1371 +4266,7 @@ async function ensureServiceStationsLoaded() {
   return OVERLAY_LOAD_STATE.serviceStationsLoading;
 }
 
-const OS_DERIVED_STATE = {
-  roadsLoaded: false,
-  railLoaded: false,
-  roadsFailed: false,
-  railFailed: false,
-  warned: false,
-  roadsData: null,
-  roadsMergedRoutes: null,
-  railData: null,
-  railMergedRoutes: null,
-  railStationData: null,
-  roadsLayer: null,
-  railLayer: null,
-  roadsStatic: false,
-  railStatic: false,
-  railRenderSig: "",
-  roadsStaticRenderSig: "",
-  railStaticRenderSig: "",
-  roadsSelectedLineKey: "",
-  roadsRenderedSegments: [],
-  roadsPolylineMode: false,
-  roadsPolylineSegments: [],
-  railSelectedLineKey: "",
-  railRenderedSegments: [],
-  railPolylineMode: false,
-  railPolylineSegments: []
-};
-
-function markOsDerivedLayerUnavailable(layerKey, reason = "") {
-  const cb = document.querySelector(`.layer-cb[data-layer="${layerKey}"]`);
-  if (cb) {
-    cb.checked = false;
-    cb.disabled = true;
-    const row = cb.closest(".layer-row");
-    if (row) {
-      row.classList.add("layer-row-disabled");
-      const nameEl = row.querySelector(".layer-name");
-      if (nameEl && !String(nameEl.textContent || "").includes("(unavailable)")) {
-        nameEl.textContent = `${nameEl.textContent} (unavailable)`;
-      }
-      row.title = reason || "Layer data unavailable";
-    }
-  }
-}
-
-function notifyOsDerivedUnavailableOnce(message) {
-  if (OS_DERIVED_STATE.warned) return;
-  OS_DERIVED_STATE.warned = true;
-  setStatus(message || "OS-derived overlays unavailable in this build.");
-}
-
-function markLayerAsStaticMode(layerKey, label = "static") {
-  const cb = document.querySelector(`.layer-cb[data-layer="${layerKey}"]`);
-  const row = cb?.closest(".layer-row");
-  if (!row) return;
-  const nameEl = row.querySelector(".layer-name");
-  if (!nameEl) return;
-  const txt = String(nameEl.textContent || "");
-  if (!txt.includes("(static)")) {
-    nameEl.textContent = `${txt} (${label})`;
-  }
-  if (layerKey === "os_rail") {
-    row.title = "Layer loaded from static UK rail network geometry";
-    return;
-  }
-  row.title = `Layer loaded using ${label} pre-baked coordinates`;
-}
-
-const OS_ROAD_BASE_COLOURS = {
-  motorway: "#f97316",
-  trunk: "#f59e0b",
-  primary: "#eab308",
-  secondary: "#d97706",
-  tertiary: "#fb923c"
-};
-const STATIC_ROAD_COLOUR_TO_TYPE = {
-  "#1d4ed8": "motorway",
-  "#2563eb": "trunk",
-  "#3b82f6": "primary",
-  "#60a5fa": "secondary"
-};
-const STATIC_RAIL_COLOUR_TO_TYPE = {
-  "#38bdf8": "rail",
-  "#22d3ee": "light_rail",
-  "#67e8f9": "tram"
-};
-const OS_ROAD_LINE_PALETTE = [
-  "#ef4444",
-  "#f97316",
-  "#f59e0b",
-  "#eab308",
-  "#22c55e",
-  "#14b8a6",
-  "#0ea5e9",
-  "#3b82f6",
-  "#8b5cf6",
-  "#ec4899"
-];
-const OS_RAIL_LINE_PALETTE = [
-  "#2563eb",
-  "#ef4444",
-  "#16a34a",
-  "#ca8a04",
-  "#9333ea",
-  "#0d9488",
-  "#db2777",
-  "#ea580c",
-  "#0284c7",
-  "#4f46e5"
-];
-
-function hashStringToInt(input) {
-  const s = String(input || "");
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h);
-}
-
-function tweakHexColor(hex, delta = 0) {
-  const clean = String(hex || "").replace("#", "");
-  if (clean.length !== 6) return hex || "#94a3b8";
-  const n = parseInt(clean, 16);
-  let r = (n >> 16) & 255;
-  let g = (n >> 8) & 255;
-  let b = n & 255;
-  const d = Math.max(-50, Math.min(50, delta));
-  r = Math.max(0, Math.min(255, r + d));
-  g = Math.max(0, Math.min(255, g + d));
-  b = Math.max(0, Math.min(255, b + d));
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function osRoadColorForFeature(properties = {}) {
-  const highway = String(properties.highway || "").toLowerCase();
-  const name = String(properties.name || "").trim().toLowerCase();
-  if (name) {
-    const hashed = OS_ROAD_LINE_PALETTE[hashStringToInt(`${highway}|${name}`) % OS_ROAD_LINE_PALETTE.length];
-    if (highway === "motorway") return tweakHexColor(hashed, 10);
-    if (highway === "trunk") return tweakHexColor(hashed, 6);
-    if (highway === "primary") return tweakHexColor(hashed, 2);
-    return tweakHexColor(hashed, -2);
-  }
-  const base = OS_ROAD_BASE_COLOURS[highway] || "#fb923c";
-  return tweakHexColor(base, 8);
-}
-
-function osRailColorForFeature(properties = {}) {
-  const kind = String(properties.railway || "").toLowerCase();
-  if (kind === "subway" || kind === "light_rail" || kind === "tram") return "#22d3ee";
-  if (kind === "narrow_gauge") return "#818cf8";
-  if (kind === "rail") return "#38bdf8";
-  if (kind === "disused" || kind === "abandoned") return "#64748b";
-  if (kind === "construction") return "#f59e0b";
-  return "#60a5fa";
-}
-
-async function fetchGeoJsonFromCandidates(paths) {
-  for (const p of paths) {
-    try {
-      const r = await fetch(p);
-      if (!r.ok) continue;
-      const data = await r.json();
-      if (data && data.type === "FeatureCollection") return { data, path: p };
-    } catch (_) {
-      // try next path
-    }
-  }
-  return null;
-}
-
-async function fetchJsonFromCandidates(paths) {
-  for (const p of paths) {
-    try {
-      const r = await fetch(p);
-      if (!r.ok) continue;
-      const data = await r.json();
-      if (data && typeof data === "object") return { data, path: p };
-    } catch (_) {
-      // try next path
-    }
-  }
-  return null;
-}
-
-function extractRoutesFromGeoJson(data, mode = "road") {
-  const features = Array.isArray(data?.features) ? data.features : [];
-  const out = [];
-  for (const f of features) {
-    const props = f?.properties || {};
-    const g = f?.geometry || {};
-    const gType = String(g?.type || "");
-    const coords = g?.coordinates;
-    const name = String(props?.name || "").trim();
-    const type = mode === "road"
-      ? String(props?.highway || "").toLowerCase()
-      : String(props?.railway || "").toLowerCase();
-
-    if (mode === "road" && !["motorway", "trunk", "primary", "secondary", "tertiary"].includes(type)) continue;
-    if (mode === "rail" && !["rail", "light_rail", "subway", "tram", "narrow_gauge"].includes(type)) continue;
-
-    const addLine = (line) => {
-      if (!Array.isArray(line) || line.length < 2) return;
-      const points = [];
-      for (const p of line) {
-        if (!Array.isArray(p) || p.length < 2) continue;
-        const lon = Number(p[0]);
-        const lat = Number(p[1]);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-        points.push([lat, lon]);
-      }
-      if (points.length < 2) return;
-      out.push({ name, type, coords: points });
-    };
-
-    if (gType === "LineString") addLine(coords);
-    if (gType === "MultiLineString" && Array.isArray(coords)) {
-      for (const part of coords) addLine(part);
-    }
-  }
-  return out;
-}
-
-function getExpandedBounds(pad = 0.18) {
-  try {
-    return map.getBounds().pad(pad);
-  } catch (_) {
-    return null;
-  }
-}
-
-function featureInBounds(feature, bounds) {
-  if (!feature || !bounds) return false;
-  const g = feature.geometry || {};
-  const t = g.type;
-  const c = g.coordinates;
-  if (!c) return false;
-  const hit = (lng, lat) => bounds.contains([lat, lng]);
-  if (t === "LineString") {
-    for (const p of c) {
-      if (Array.isArray(p) && p.length >= 2 && hit(p[0], p[1])) return true;
-    }
-    return false;
-  }
-  if (t === "MultiLineString") {
-    for (const line of c) {
-      for (const p of line || []) {
-        if (Array.isArray(p) && p.length >= 2 && hit(p[0], p[1])) return true;
-      }
-    }
-    return false;
-  }
-  if (t === "Point") return hit(c[0], c[1]);
-  if (t === "MultiPoint") return (c || []).some((p) => Array.isArray(p) && p.length >= 2 && hit(p[0], p[1]));
-  return false;
-}
-
-function railVisibleAtZoom(properties = {}, zoom = 0) {
-  const kind = String(properties.railway || "").toLowerCase();
-  if (zoom <= 7) return kind === "rail" || kind === "subway" || kind === "light_rail" || kind === "tram";
-  if (zoom <= 9) return kind === "rail" || kind === "subway" || kind === "light_rail";
-  return true;
-}
-
-function getOsRenderSignature() {
-  const b = map.getBounds();
-  const z = map.getZoom();
-  return `${z}|${b.getSouth().toFixed(2)}|${b.getWest().toFixed(2)}|${b.getNorth().toFixed(2)}|${b.getEast().toFixed(2)}`;
-}
-
-function getStaticRenderSignature() {
-  const b = map.getBounds();
-  const z = map.getZoom();
-  return `${z}|${b.getSouth().toFixed(2)}|${b.getWest().toFixed(2)}|${b.getNorth().toFixed(2)}|${b.getEast().toFixed(2)}`;
-}
-
-function staticRouteInBounds(coords = [], bounds = null) {
-  if (!bounds || !Array.isArray(coords)) return false;
-  for (const p of coords) {
-    if (!Array.isArray(p) || p.length < 2) continue;
-    const lat = Number(p[0]);
-    const lon = Number(p[1]);
-    if (Number.isFinite(lat) && Number.isFinite(lon) && bounds.contains([lat, lon])) return true;
-  }
-  return false;
-}
-
-function buildStaticPolylineSegments(payload = {}, kind = "road") {
-  const rows = Array.isArray(payload?.polylines) ? payload.polylines : [];
-  const colourMap = kind === "rail" ? STATIC_RAIL_COLOUR_TO_TYPE : STATIC_ROAD_COLOUR_TO_TYPE;
-  const fallbackType = kind === "rail" ? "rail" : "primary";
-  const out = [];
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i];
-    if (!Array.isArray(row) || row.length < 4) continue;
-    const colour = String(row[0] || "").toLowerCase();
-    const type = colourMap[colour] || fallbackType;
-    const opacity = Number(row[1]);
-    const coords = [];
-    for (let j = 2; j < row.length; j += 1) {
-      const p = row[j];
-      if (!Array.isArray(p) || p.length < 2) continue;
-      const lat = Number(p[0]);
-      const lon = Number(p[1]);
-      if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-      coords.push([lat, lon]);
-    }
-    if (coords.length < 2) continue;
-    out.push({
-      type,
-      coords,
-      color: colour,
-      opacity: Number.isFinite(opacity) ? Math.max(0.1, Math.min(1, opacity)) : 0.9,
-      lengthKm: routeLengthKm(coords)
-    });
-  }
-  return out;
-}
-
-function staticRoadVisibleAtZoom(type = "", zoom = 0) {
-  const t = String(type || "").toLowerCase();
-  if (zoom <= 7) return t === "motorway" || t === "trunk" || t === "primary" || t === "secondary";
-  if (zoom <= 9) return t === "motorway" || t === "trunk" || t === "primary" || t === "secondary" || t === "tertiary";
-  return true;
-}
-
-function normalizeRoadRouteName(name = "") {
-  return String(name || "").trim().toLowerCase();
-}
-
-function staticRoadMajorThresholdKm(zoom = 0) {
-  if (zoom <= 7) return 22;
-  if (zoom <= 9) return 12;
-  return 4;
-}
-
-function staticRoadPriorityScore(route = {}, totalKm = 0) {
-  const t = String(route?.type || "").toLowerCase();
-  const name = normalizeRoadRouteName(route?.name);
-  const coords = Array.isArray(route?.coords) ? route.coords : [];
-  const segKm = routeLengthKm(coords);
-  const effectiveKm = Math.max(Number(totalKm || 0), segKm);
-
-  let score = 0;
-  // Road class baseline.
-  if (t === "motorway") score += 30;
-  else if (t === "trunk") score += 22;
-  else if (t === "primary") score += 14;
-  else if (t === "secondary") score += 8;
-  else if (t === "tertiary") score += 3;
-
-  // Strategic route references in name.
-  if (/\bm\d{1,3}\b/.test(name)) score += 18;          // M1, M62, etc.
-  if (/\ba\d{1,3}(\(m\))?\b/.test(name)) score += 10;  // A1, A14, A1(M)
-  if (/\(m\)/.test(name)) score += 6;                  // A-road motorway sections
-
-  // Corridor-style names.
-  if (/ring road|orbital|bypass/.test(name)) score += 6;
-  if (/north|south|east|west/.test(name)) score += 2;
-
-  // Scale influence.
-  score += Math.min(12, Math.round(effectiveKm * 0.16));
-  if (effectiveKm >= 80) score += 4;
-  if (effectiveKm >= 120) score += 4;
-  return score;
-}
-
-function isMajorStaticRoadRoute(route = {}, totalKm = 0, zoom = 0) {
-  const t = String(route?.type || "").toLowerCase();
-  if (!(t === "motorway" || t === "trunk" || t === "primary" || t === "secondary" || t === "tertiary")) return false;
-  const coords = Array.isArray(route?.coords) ? route.coords : [];
-  const segKm = routeLengthKm(coords);
-  const threshold = staticRoadMajorThresholdKm(zoom);
-  const score = staticRoadPriorityScore(route, totalKm);
-  const scoreThreshold = zoom <= 7 ? 22 : (zoom <= 9 ? 16 : 10);
-  if (score >= scoreThreshold) return true;
-  if (Number(totalKm || 0) >= threshold) return true;
-  return segKm >= Math.max(0.8, threshold * 0.2);
-}
-
-function staticRailVisibleAtZoom(type = "", zoom = 0) {
-  const t = String(type || "").toLowerCase();
-  if (zoom <= 7) return t === "rail" || t === "light_rail" || t === "subway" || t === "tram";
-  if (zoom <= 9) return t === "rail" || t === "light_rail" || t === "subway" || t === "tram" || t === "narrow_gauge";
-  return true;
-}
-
-function staticRailMajorThresholdKm(zoom = 0) {
-  if (zoom <= 7) return 14;
-  if (zoom <= 9) return 7;
-  return 2;
-}
-
-function normalizeRailRouteName(name = "") {
-  return String(name || "").trim().toLowerCase();
-}
-
-function staticRailPriorityScore(route = {}, totalKm = 0) {
-  const t = String(route?.type || "").toLowerCase();
-  if (!(t === "rail" || t === "light_rail" || t === "subway" || t === "tram")) return 0;
-  const name = normalizeRailRouteName(route?.name);
-  const coords = Array.isArray(route?.coords) ? route.coords : [];
-  const segKm = routeLengthKm(coords);
-  const effectiveKm = Math.max(Number(totalKm || 0), segKm);
-
-  let score = 0;
-  // Length matters, but should not dominate named trunk corridors.
-  score += Math.min(14, Math.round(effectiveKm * 0.22));
-  if (effectiveKm >= 40) score += 4;
-  if (effectiveKm >= 70) score += 3;
-
-  if (/main line/.test(name)) score += 22;
-  if (/high speed|hs1|hs2/.test(name)) score += 20;
-  if (/cross country|cross-country/.test(name)) score += 14;
-  if (/coast|coastway/.test(name)) score += 12;
-  if (/east coast|west coast|midland|great western|great eastern|south western|south west/.test(name)) score += 12;
-  if (/thameslink|elizabeth line|north london line|chiltern|brighton|chatham|highland|settle-carlisle/.test(name)) score += 9;
-  if (/branch|loop|tram|metro/.test(name)) score -= 4;
-
-  if (t === "rail") score += 5;
-  if (t === "light_rail" || t === "subway" || t === "tram") score += 2;
-  return score;
-}
-
-function railDisplayRouteLimitForZoom(zoom = 0) {
-  if (zoom <= 6) return 2200;
-  if (zoom <= 8) return 4200;
-  if (zoom <= 10) return 7000;
-  return 11000;
-}
-
-function simplifyCoordsByStepKm(coords = [], minStepKm = 0.2) {
-  if (!Array.isArray(coords) || coords.length < 3) return Array.isArray(coords) ? coords.slice() : [];
-  const out = [];
-  let last = null;
-  for (let i = 0; i < coords.length; i++) {
-    const p = coords[i];
-    if (!Array.isArray(p) || p.length < 2) continue;
-    if (!last) {
-      out.push(p);
-      last = p;
-      continue;
-    }
-    if (i === coords.length - 1) {
-      out.push(p);
-      last = p;
-      continue;
-    }
-    const d = distanceKm(last, p);
-    if (Number.isFinite(d) && d >= minStepKm) {
-      out.push(p);
-      last = p;
-    }
-  }
-  if (out.length < 2 && coords.length >= 2) return [coords[0], coords[coords.length - 1]];
-  return out;
-}
-
-function simplifyRailRouteForDisplay(coords = [], zoom = 0) {
-  if (zoom <= 7) return simplifyCoordsByStepKm(coords, 0.55);
-  if (zoom <= 9) return simplifyCoordsByStepKm(coords, 0.28);
-  if (zoom <= 11) return simplifyCoordsByStepKm(coords, 0.14);
-  return simplifyCoordsByStepKm(coords, 0.08);
-}
-
-function simplifyRoadRouteForDisplay(coords = [], zoom = 0) {
-  if (zoom <= 7) return simplifyCoordsByStepKm(coords, 0.42);
-  if (zoom <= 9) return simplifyCoordsByStepKm(coords, 0.22);
-  if (zoom <= 11) return simplifyCoordsByStepKm(coords, 0.12);
-  return simplifyCoordsByStepKm(coords, 0.07);
-}
-
-function roadDisplayRouteLimitForZoom(zoom = 0) {
-  if (zoom <= 6) return 2400;
-  if (zoom <= 8) return 4200;
-  if (zoom <= 10) return 6200;
-  return 9000;
-}
-
-function buildRailSpineDisplayRoutes(routes = [], zoom = 0) {
-  const base = (routes || [])
-    .map((r) => ({
-      ...r,
-      type: String(r?.type || "rail").toLowerCase(),
-      name: `__spine_${String(r?.type || "rail").toLowerCase()}`
-    }))
-    .filter((r) => Array.isArray(r?.coords) && r.coords.length >= 2);
-  if (!base.length) return [];
-
-  const stitched = [...base];
-  const connectors = buildEndpointConnectors(base, zoom <= 8 ? 0.75 : 0.5);
-  for (const c of connectors) {
-    stitched.push({
-      ...c,
-      type: String(c?.type || "rail").toLowerCase(),
-      name: `__spine_${String(c?.type || "rail").toLowerCase()}`
-    });
-  }
-
-  const merged = mergeStaticRailRoutes(stitched)
-    .filter((r) => routeLengthKm(Array.isArray(r?.coords) ? r.coords : []) >= (zoom <= 8 ? 1.2 : 0.8))
-    .map((r) => ({
-      ...r,
-      displayName: (String(r?.type || "rail") === "rail") ? "National Rail Spine" : `${String(r?.type || "rail")} spine`
-    }));
-
-  return merged;
-}
-
-function isMajorStaticRailRoute(route = {}, totalKm = 0, zoom = 0) {
-  const t = String(route?.type || "").toLowerCase();
-  if (!(t === "rail" || t === "light_rail" || t === "subway" || t === "tram")) return false;
-  const coords = Array.isArray(route?.coords) ? route.coords : [];
-  const segKm = routeLengthKm(coords);
-  const threshold = staticRailMajorThresholdKm(zoom);
-  const score = staticRailPriorityScore(route, totalKm);
-  const scoreThreshold = zoom <= 7 ? 18 : (zoom <= 9 ? 12 : 8);
-  if (score >= scoreThreshold) return true;
-  if (Number(totalKm || 0) >= threshold) return true;
-  // Keep shorter fragments that are likely part of major lines.
-  return segKm >= Math.max(0.6, threshold * 0.22);
-}
-
-function distanceKm(a, b) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length < 2 || b.length < 2) return Infinity;
-  const lat1 = Number(a[0]);
-  const lon1 = Number(a[1]);
-  const lat2 = Number(b[0]);
-  const lon2 = Number(b[1]);
-  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return Infinity;
-  const rad = Math.PI / 180;
-  const dLat = (lat2 - lat1) * rad;
-  const dLon = (lon2 - lon1) * rad;
-  const x = dLon * Math.cos(((lat1 + lat2) * 0.5) * rad);
-  const y = dLat;
-  return Math.sqrt(x * x + y * y) * 6371;
-}
-
-function buildEndpointConnectors(routes = [], maxGapKm = 1.4) {
-  const connectors = [];
-  const endpoints = [];
-  const cellSizeDeg = Math.max(0.0025, maxGapKm / 111);
-  const cells = new Map();
-  const pairSeen = new Set();
-
-  const cellKey = (lat, lon) => `${Math.floor(lat / cellSizeDeg)}|${Math.floor(lon / cellSizeDeg)}`;
-  const pushCell = (idx, endpoint) => {
-    const key = cellKey(endpoint[0], endpoint[1]);
-    if (!cells.has(key)) cells.set(key, []);
-    cells.get(key).push(idx);
-  };
-
-  for (let i = 0; i < routes.length; i++) {
-    const coords = Array.isArray(routes[i]?.coords) ? routes[i].coords : [];
-    if (coords.length < 2) continue;
-    const a = coords[0];
-    const b = coords[coords.length - 1];
-    endpoints.push({ routeIdx: i, endpoint: a, side: "s" });
-    pushCell(endpoints.length - 1, a);
-    endpoints.push({ routeIdx: i, endpoint: b, side: "e" });
-    pushCell(endpoints.length - 1, b);
-  }
-
-  const neighbourCellKeys = (lat, lon) => {
-    const r = Math.floor(lat / cellSizeDeg);
-    const c = Math.floor(lon / cellSizeDeg);
-    const out = [];
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) out.push(`${r + dr}|${c + dc}`);
-    }
-    return out;
-  };
-
-  for (let i = 0; i < endpoints.length; i++) {
-    const ep = endpoints[i];
-    const [lat, lon] = ep.endpoint;
-    let best = null;
-    for (const ck of neighbourCellKeys(lat, lon)) {
-      const idxs = cells.get(ck) || [];
-      for (const j of idxs) {
-        if (j === i) continue;
-        const other = endpoints[j];
-        if (!other || other.routeIdx === ep.routeIdx) continue;
-        const d = distanceKm(ep.endpoint, other.endpoint);
-        if (!Number.isFinite(d) || d > maxGapKm) continue;
-        if (!best || d < best.d) best = { d, other };
-      }
-    }
-    if (!best) continue;
-    const r1 = routes[ep.routeIdx];
-    const r2 = routes[best.other.routeIdx];
-    const typeMatch = String(r1?.type || "").toLowerCase() === String(r2?.type || "").toLowerCase();
-    const n1 = String(r1?.name || "").trim().toLowerCase();
-    const n2 = String(r2?.name || "").trim().toLowerCase();
-    const nameMatch = !!n1 && !!n2 && n1 === n2;
-    if (!typeMatch && !nameMatch) continue;
-
-    const pairKey = [buildCoordKey(ep.endpoint, 5), buildCoordKey(best.other.endpoint, 5)].sort().join("|");
-    if (pairSeen.has(pairKey)) continue;
-    pairSeen.add(pairKey);
-    connectors.push({
-      coords: [ep.endpoint, best.other.endpoint],
-      type: r1?.type || r2?.type || "",
-      name: r1?.name || r2?.name || ""
-    });
-  }
-  return connectors;
-}
-
-function normalizeRailLineKey(type = "", name = "") {
-  const t = String(type || "").trim().toLowerCase();
-  const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
-  return `${t}|${n}`;
-}
-
-function buildRailGapConnectors(routes = [], maxGapKm = 0.12) {
-  const out = [];
-  const byLine = new Map();
-  for (const r of routes || []) {
-    const key = normalizeRailLineKey(r?.type, r?.name);
-    if (!key || key.endsWith("|")) continue;
-    if (!byLine.has(key)) byLine.set(key, []);
-    byLine.get(key).push(r);
-  }
-  for (const group of byLine.values()) {
-    if (!Array.isArray(group) || group.length < 2) continue;
-    out.push(...buildEndpointConnectors(group, maxGapKm));
-  }
-
-  // Additional stitching across same rail type when line naming changes between
-  // adjacent segments (common in nationwide OSM-derived extracts).
-  const byType = new Map();
-  for (const r of routes || []) {
-    const t = String(r?.type || "").toLowerCase();
-    if (!(t === "rail" || t === "light_rail" || t === "subway" || t === "tram")) continue;
-    const score = staticRailPriorityScore(r, routeLengthKm(Array.isArray(r?.coords) ? r.coords : []));
-    if (score < 12) continue;
-    if (!byType.has(t)) byType.set(t, []);
-    byType.get(t).push(r);
-  }
-  for (const group of byType.values()) {
-    if (!Array.isArray(group) || group.length < 2) continue;
-    out.push(...buildEndpointConnectors(group, Math.max(0.08, maxGapKm * 0.78)));
-  }
-
-  const dedup = [];
-  const seen = new Set();
-  for (const c of out) {
-    const a = buildCoordKey(c?.coords?.[0], 5);
-    const b = buildCoordKey(c?.coords?.[1], 5);
-    if (!a || !b) continue;
-    const k = [a, b].sort().join("|");
-    if (seen.has(k)) continue;
-    seen.add(k);
-    dedup.push(c);
-  }
-  return dedup;
-}
-
-function normalizeRoadLineKey(type = "", name = "") {
-  const t = String(type || "").trim().toLowerCase();
-  const n = String(name || "").trim().toLowerCase().replace(/\s+/g, " ");
-  return `${t}|${n}`;
-}
-
-function buildRoadGapConnectors(routes = [], maxGapKm = 0.1) {
-  const out = [];
-  const byRoad = new Map();
-  for (const r of routes || []) {
-    const key = normalizeRoadLineKey(r?.type, r?.name);
-    if (!key || key.endsWith("|")) continue;
-    if (!byRoad.has(key)) byRoad.set(key, []);
-    byRoad.get(key).push(r);
-  }
-  for (const group of byRoad.values()) {
-    if (!Array.isArray(group) || group.length < 2) continue;
-    out.push(...buildEndpointConnectors(group, maxGapKm));
-  }
-
-  // Additional stitching for strategic roads where naming changes across
-  // contiguous motorway/trunk segments.
-  const strategic = [];
-  for (const r of routes || []) {
-    const t = String(r?.type || "").toLowerCase();
-    if (!(t === "motorway" || t === "trunk" || t === "primary")) continue;
-    const score = staticRoadPriorityScore(r, routeLengthKm(Array.isArray(r?.coords) ? r.coords : []));
-    if (score < 18) continue;
-    strategic.push(r);
-  }
-  if (strategic.length >= 2) {
-    out.push(...buildEndpointConnectors(strategic, Math.max(0.1, maxGapKm * 0.82)));
-  }
-
-  const dedup = [];
-  const seen = new Set();
-  for (const c of out) {
-    const a = buildCoordKey(c?.coords?.[0], 5);
-    const b = buildCoordKey(c?.coords?.[1], 5);
-    if (!a || !b) continue;
-    const k = [a, b].sort().join("|");
-    if (seen.has(k)) continue;
-    seen.add(k);
-    dedup.push(c);
-  }
-  return dedup;
-}
-
-function routeLengthKm(coords = []) {
-  if (!Array.isArray(coords) || coords.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < coords.length; i++) {
-    const d = distanceKm(coords[i - 1], coords[i]);
-    if (Number.isFinite(d)) total += d;
-  }
-  return total;
-}
-
-function buildRoadLineLengthTotals(routes = []) {
-  const totals = new Map();
-  for (const r of routes || []) {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    if (coords.length < 2) continue;
-    const key = normalizeRoadLineKey(r?.type, r?.name);
-    if (!key || key.endsWith("|")) continue;
-    const km = routeLengthKm(coords);
-    totals.set(key, (totals.get(key) || 0) + km);
-  }
-  return totals;
-}
-
-function buildOsRoadLinePopupHtml(route = {}, lineKey = "", totalKm = 0) {
-  const safeName = String(route?.name || "Unnamed Road");
-  const safeType = String(route?.type || "road");
-  const segKm = routeLengthKm(Array.isArray(route?.coords) ? route.coords : []);
-  const selected = String(OS_DERIVED_STATE.roadsSelectedLineKey || "") === String(lineKey || "");
-  const encodedKey = encodeURIComponent(String(lineKey || ""));
-  const actionButton = selected
-    ? `<button class="popup-psc-btn" type="button" onclick="clearOsRoadLineSelection()">Clear Focus</button>`
-    : `<button class="popup-psc-btn" type="button" onclick="selectOsRoadLine('${encodedKey}')">Focus This Road</button>`;
-  return (
-    `<strong>${escapeHtml(safeName)}</strong><br>` +
-    `<span class="popup-label">Type</span> ${escapeHtml(safeType)}<br>` +
-    `<span class="popup-label">Route Length</span> ${Number(totalKm || 0).toFixed(1)} km<br>` +
-    `<span class="popup-label">Visible Segment</span> ${Number(segKm || 0).toFixed(2)} km<br>` +
-    `<span class="popup-label">Priority</span> ${selected ? "Focused" : "Default (longest routes drawn on top)"}<br>` +
-    `<div class="cp-btn-row" style="margin-top:8px;">${actionButton}</div>`
-  );
-}
-
-function applyOsRoadSelectionStyles() {
-  const segments = Array.isArray(OS_DERIVED_STATE.roadsRenderedSegments) ? OS_DERIVED_STATE.roadsRenderedSegments : [];
-  if (!segments.length) return;
-  const selectedKey = String(OS_DERIVED_STATE.roadsSelectedLineKey || "");
-  let minTotal = Infinity;
-  let maxTotal = 0;
-  for (const seg of segments) {
-    const t = Number(seg?.totalKm || 0);
-    if (!Number.isFinite(t)) continue;
-    minTotal = Math.min(minTotal, t);
-    maxTotal = Math.max(maxTotal, t);
-  }
-  if (!Number.isFinite(minTotal)) minTotal = 0;
-  const span = Math.max(0.0001, maxTotal - minTotal);
-
-  for (const seg of segments) {
-    const layer = seg?.layer;
-    if (!layer || typeof layer.setStyle !== "function") continue;
-    const totalKm = Number(seg?.totalKm || 0);
-    const baseWeight = Number(seg?.baseWeight || 3);
-    const hasSelection = !!selectedKey;
-    const selected = hasSelection && String(seg?.lineKey || "") === selectedKey;
-    const rank = Math.max(0, Math.min(1, (totalKm - minTotal) / span));
-
-    let opacity = 0.7 + (rank * 0.24);
-    let weight = baseWeight + (rank * 0.45);
-    if (hasSelection) {
-      opacity = selected ? 0.99 : 0.12;
-      weight = selected ? (baseWeight + 2.1) : Math.max(1.4, baseWeight - 1.2);
-    }
-    layer.setStyle({ opacity, weight });
-    if (layer._path) {
-      layer._path.classList.remove("os-road-line-selected", "os-road-line-dimmed");
-      if (hasSelection && selected) layer._path.classList.add("os-road-line-selected");
-      if (hasSelection && !selected) layer._path.classList.add("os-road-line-dimmed");
-    }
-    if (hasSelection && selected && typeof layer.bringToFront === "function") layer.bringToFront();
-  }
-}
-
-window.selectOsRoadLine = function selectOsRoadLine(encodedLineKey = "") {
-  let lineKey = String(encodedLineKey || "");
-  try {
-    lineKey = decodeURIComponent(lineKey);
-  } catch (_) {
-    // keep raw value
-  }
-  OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
-  applyOsRoadSelectionStyles();
-  if (lineKey) setStatus(`OS roads focus: ${lineKey}`);
-};
-
-window.clearOsRoadLineSelection = function clearOsRoadLineSelection() {
-  OS_DERIVED_STATE.roadsSelectedLineKey = "";
-  applyOsRoadSelectionStyles();
-  setStatus("OS roads focus cleared");
-};
-
-function buildRailLineLengthTotals(routes = []) {
-  const totals = new Map();
-  for (const r of routes || []) {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    if (coords.length < 2) continue;
-    const key = normalizeRailLineKey(r?.type, r?.name);
-    if (!key || key.endsWith("|")) continue;
-    const km = routeLengthKm(coords);
-    totals.set(key, (totals.get(key) || 0) + km);
-  }
-  return totals;
-}
-
-function buildOsRailLinePopupHtml(route = {}, lineKey = "", totalKm = 0) {
-  const safeName = String(route?.name || "Unnamed Rail Line");
-  const safeType = String(route?.type || "rail");
-  const segKm = routeLengthKm(Array.isArray(route?.coords) ? route.coords : []);
-  const selected = String(OS_DERIVED_STATE.railSelectedLineKey || "") === String(lineKey || "");
-  const encodedKey = encodeURIComponent(String(lineKey || ""));
-  const actionButton = selected
-    ? `<button class="popup-psc-btn" type="button" onclick="clearOsRailLineSelection()">Clear Focus</button>`
-    : `<button class="popup-psc-btn" type="button" onclick="selectOsRailLine('${encodedKey}')">Focus This Line</button>`;
-  return (
-    `<strong>${escapeHtml(safeName)}</strong><br>` +
-    `<span class="popup-label">Type</span> ${escapeHtml(safeType)}<br>` +
-    `<span class="popup-label">Line Length</span> ${Number(totalKm || 0).toFixed(1)} km<br>` +
-    `<span class="popup-label">Visible Segment</span> ${Number(segKm || 0).toFixed(2)} km<br>` +
-    `<span class="popup-label">Priority</span> ${selected ? "Focused" : "Default (longest lines drawn on top)"}<br>` +
-    `<div class="cp-btn-row" style="margin-top:8px;">${actionButton}</div>`
-  );
-}
-
-function applyOsRailSelectionStyles() {
-  const segments = Array.isArray(OS_DERIVED_STATE.railRenderedSegments) ? OS_DERIVED_STATE.railRenderedSegments : [];
-  if (!segments.length) return;
-  const selectedKey = String(OS_DERIVED_STATE.railSelectedLineKey || "");
-  let minTotal = Infinity;
-  let maxTotal = 0;
-  for (const seg of segments) {
-    const t = Number(seg?.totalKm || 0);
-    if (!Number.isFinite(t)) continue;
-    minTotal = Math.min(minTotal, t);
-    maxTotal = Math.max(maxTotal, t);
-  }
-  if (!Number.isFinite(minTotal)) minTotal = 0;
-  const span = Math.max(0.0001, maxTotal - minTotal);
-
-  for (const seg of segments) {
-    const layer = seg?.layer;
-    if (!layer || typeof layer.setStyle !== "function") continue;
-    const totalKm = Number(seg?.totalKm || 0);
-    const baseWeight = Number(seg?.baseWeight || 3);
-    const hasSelection = !!selectedKey;
-    const selected = hasSelection && String(seg?.lineKey || "") === selectedKey;
-    const rank = Math.max(0, Math.min(1, (totalKm - minTotal) / span));
-
-    let opacity = 0.72 + (rank * 0.24);
-    let weight = baseWeight + (rank * 0.5);
-    if (hasSelection) {
-      opacity = selected ? 0.99 : 0.14;
-      weight = selected ? (baseWeight + 2.2) : Math.max(1.6, baseWeight - 1.2);
-    }
-    layer.setStyle({ opacity, weight });
-    if (layer._path) {
-      layer._path.classList.remove("os-rail-line-selected", "os-rail-line-dimmed");
-      if (hasSelection && selected) layer._path.classList.add("os-rail-line-selected");
-      if (hasSelection && !selected) layer._path.classList.add("os-rail-line-dimmed");
-    }
-    if (hasSelection && selected && typeof layer.bringToFront === "function") layer.bringToFront();
-  }
-}
-
-window.selectOsRailLine = function selectOsRailLine(encodedLineKey = "") {
-  let lineKey = String(encodedLineKey || "");
-  try {
-    lineKey = decodeURIComponent(lineKey);
-  } catch (_) {
-    // keep raw value
-  }
-  OS_DERIVED_STATE.railSelectedLineKey = lineKey;
-  applyOsRailSelectionStyles();
-  if (lineKey) setStatus(`UK rail focus: ${lineKey}`);
-};
-
-window.clearOsRailLineSelection = function clearOsRailLineSelection() {
-  OS_DERIVED_STATE.railSelectedLineKey = "";
-  applyOsRailSelectionStyles();
-  setStatus("UK rail focus cleared");
-};
-
-function buildCoordKey(coord, precision = 4) {
-  if (!Array.isArray(coord) || coord.length < 2) return "";
-  const lat = Number(coord[0]);
-  const lon = Number(coord[1]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
-  return `${lat.toFixed(precision)},${lon.toFixed(precision)}`;
-}
-
-function normalizeRouteCoords(coords = []) {
-  const out = [];
-  let lastKey = "";
-  for (const c of coords) {
-    if (!Array.isArray(c) || c.length < 2) continue;
-    const lat = Number(c[0]);
-    const lon = Number(c[1]);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const key = buildCoordKey([lat, lon], 5);
-    if (!key || key === lastKey) continue;
-    out.push([lat, lon]);
-    lastKey = key;
-  }
-  return out;
-}
-
-function mergeStaticRailRoutes(rawRoutes = []) {
-  const joinPrecision = 3;
-  const buckets = new Map();
-  for (const r of rawRoutes) {
-    const coords = normalizeRouteCoords(Array.isArray(r?.coords) ? r.coords : []);
-    if (coords.length < 2) continue;
-    const type = String(r?.type || "rail");
-    const name = String(r?.name || "");
-    const key = `${type.toLowerCase()}|${name.toLowerCase()}`;
-    if (!buckets.has(key)) buckets.set(key, []);
-    buckets.get(key).push({ ...r, type, name, coords });
-  }
-
-  const merged = [];
-  for (const segments of buckets.values()) {
-    const pending = [...segments];
-    while (pending.length) {
-      const current = pending.pop();
-      const line = [...current.coords];
-      let changed = true;
-      while (changed) {
-        changed = false;
-        const lineStart = buildCoordKey(line[0], joinPrecision);
-        const lineEnd = buildCoordKey(line[line.length - 1], joinPrecision);
-        for (let i = pending.length - 1; i >= 0; i--) {
-          const seg = pending[i];
-          const segStart = buildCoordKey(seg.coords[0], joinPrecision);
-          const segEnd = buildCoordKey(seg.coords[seg.coords.length - 1], joinPrecision);
-          let consumed = false;
-          if (lineEnd && lineEnd === segStart) {
-            line.push(...seg.coords.slice(1));
-            consumed = true;
-          } else if (lineEnd && lineEnd === segEnd) {
-            line.push(...[...seg.coords].reverse().slice(1));
-            consumed = true;
-          } else if (lineStart && lineStart === segEnd) {
-            line.unshift(...seg.coords.slice(0, -1));
-            consumed = true;
-          } else if (lineStart && lineStart === segStart) {
-            line.unshift(...[...seg.coords].reverse().slice(0, -1));
-            consumed = true;
-          }
-          if (consumed) {
-            pending.splice(i, 1);
-            changed = true;
-          }
-        }
-      }
-      merged.push({
-        name: current.name,
-        type: current.type,
-        coords: normalizeRouteCoords(line)
-      });
-    }
-  }
-  return merged;
-}
-
-function mergeStaticRoadRoutes(rawRoutes = []) {
-  return mergeStaticRailRoutes((rawRoutes || []).map((r) => ({
-    ...(r || {}),
-    type: String(r?.type || "road"),
-    name: String(r?.name || "")
-  })));
-}
-
-function renderOsRailOverlayViewport() {
-  if (!OS_DERIVED_STATE.railData || !OS_DERIVED_STATE.railLayer) return;
-  const sig = getOsRenderSignature();
-  if (sig === OS_DERIVED_STATE.railRenderSig) return;
-  OS_DERIVED_STATE.railRenderSig = sig;
-  const bounds = getExpandedBounds(0.22);
-  const zoom = map.getZoom();
-  const features = (OS_DERIVED_STATE.railData.features || []).filter((f) => {
-    const p = f.properties || {};
-    return railVisibleAtZoom(p, zoom) && featureInBounds(f, bounds);
-  });
-  OS_DERIVED_STATE.railLayer.clearLayers();
-  L.geoJSON({ type: "FeatureCollection", features }, {
-    style: (f) => ({
-      color: osRailColorForFeature(f.properties || {}),
-      weight: zoom <= 8 ? 2.8 : 3.6,
-      opacity: zoom <= 8 ? 0.8 : 0.9,
-      className: "os-rail-static-line"
-    }),
-    onEachFeature: (f, l) => {
-      const name = f.properties?.name || "Rail Line";
-      const kind = f.properties?.railway || "";
-      const coords = f.geometry?.type === "LineString"
-        ? (f.geometry.coordinates || []).map((p) => [Number(p?.[1]), Number(p?.[0])]).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]))
-        : [];
-      const segKm = routeLengthKm(coords);
-      l.bindPopup(
-        `<strong>${escapeHtml(name)}</strong><br>` +
-        `<span class="popup-label">Type</span> ${escapeHtml(kind || "rail")}<br>` +
-        `<span class="popup-label">Visible Segment</span> ${segKm.toFixed(2)} km`
-      );
-      if (zoom >= 9) {
-        l.bindTooltip(`${escapeHtml(name)}${kind ? ` (${escapeHtml(kind)})` : ""}`, { sticky: true, opacity: 0.88 });
-      }
-    }
-  }).addTo(OS_DERIVED_STATE.railLayer);
-}
-
-const scheduleOsRailViewportRender = debounce(renderOsRailOverlayViewport, 160);
-
-function renderStaticRoadPolylineOverlay() {
-  if (!OS_DERIVED_STATE.roadsLayer) return;
-  const sig = getStaticRenderSignature();
-  if (sig === OS_DERIVED_STATE.roadsStaticRenderSig) return;
-  OS_DERIVED_STATE.roadsStaticRenderSig = sig;
-  const bounds = getExpandedBounds(0.45);
-  const zoom = map.getZoom();
-  const source = Array.isArray(OS_DERIVED_STATE.roadsPolylineSegments) ? OS_DERIVED_STATE.roadsPolylineSegments : [];
-  const visible = source
-    .filter((seg) => staticRoadVisibleAtZoom(seg?.type, zoom) && staticRouteInBounds(seg?.coords, bounds))
-    .sort((a, b) => (Number(b?.lengthKm || 0) - Number(a?.lengthKm || 0)));
-  const cap = zoom <= 6 ? 900 : (zoom <= 8 ? 1400 : 2200);
-  OS_DERIVED_STATE.roadsLayer.clearLayers();
-  OS_DERIVED_STATE.roadsRenderedSegments = [];
-
-  for (const seg of visible.slice(0, cap)) {
-    const t = String(seg?.type || "").toLowerCase();
-    const baseWeight = t === "motorway" ? (zoom <= 8 ? 3.7 : 4.6)
-      : t === "trunk" ? (zoom <= 8 ? 3.2 : 4.0)
-      : t === "primary" ? (zoom <= 8 ? 2.8 : 3.5)
-      : (zoom <= 8 ? 2.2 : 2.9);
-    L.polyline(seg.coords, {
-      color: seg.color || osRoadColorForFeature({ highway: seg.type }),
-      weight: baseWeight,
-      opacity: Number.isFinite(seg.opacity) ? seg.opacity : 0.9,
-      smoothFactor: 1.6,
-      className: "os-road-static-line"
-    }).addTo(OS_DERIVED_STATE.roadsLayer);
-  }
-}
-
-function renderStaticRailPolylineOverlay() {
-  if (!OS_DERIVED_STATE.railLayer) return;
-  const sig = getStaticRenderSignature();
-  if (sig === OS_DERIVED_STATE.railStaticRenderSig) return;
-  OS_DERIVED_STATE.railStaticRenderSig = sig;
-  const bounds = getExpandedBounds(0.45);
-  const zoom = map.getZoom();
-  const source = Array.isArray(OS_DERIVED_STATE.railPolylineSegments) ? OS_DERIVED_STATE.railPolylineSegments : [];
-  const visible = source
-    .filter((seg) => staticRailVisibleAtZoom(seg?.type, zoom) && staticRouteInBounds(seg?.coords, bounds))
-    .sort((a, b) => (Number(b?.lengthKm || 0) - Number(a?.lengthKm || 0)));
-  const cap = zoom <= 6 ? 1100 : (zoom <= 8 ? 1800 : 2800);
-  const stations = Array.isArray(OS_DERIVED_STATE.railStationData?.stations) ? OS_DERIVED_STATE.railStationData.stations : [];
-  OS_DERIVED_STATE.railLayer.clearLayers();
-  OS_DERIVED_STATE.railRenderedSegments = [];
-
-  for (const seg of visible.slice(0, cap)) {
-    const t = String(seg?.type || "").toLowerCase();
-    const baseWeight = t === "rail" ? (zoom <= 8 ? 2.8 : 3.6) : (zoom <= 8 ? 2.2 : 3.0);
-    L.polyline(seg.coords, {
-      color: seg.color || osRailColorForFeature({ railway: seg.type }),
-      weight: baseWeight,
-      opacity: Number.isFinite(seg.opacity) ? seg.opacity : 0.9,
-      smoothFactor: 1.6,
-      className: "os-rail-static-line"
-    }).addTo(OS_DERIVED_STATE.railLayer);
-  }
-
-  if (zoom < 7) return;
-  renderRailNodes(stations, bounds, zoom);
-}
-
-const NATIONAL_RAIL_LOGO_PATH = "gfx/rail_logos/Logos/NRE_Powered_logo.png";
-
-function normalizeRailNodeName(raw) {
-  return String(raw || "").trim() || "Rail Node";
-}
-
-function getRailNodeKind(name) {
-  const n = String(name || "").toLowerCase();
-  if (n.includes("station")) return "station";
-  if (n.includes("junction") || n.includes("jcn")) return "junction";
-  if (n.includes("tunnel")) return "tunnel";
-  if (n.includes("viaduct")) return "viaduct";
-  if (n.includes("line") || n.includes("branch")) return "line";
-  return "node";
-}
-
-function chooseRailNodeSample(stations, bounds, zoom) {
-  const cellSize = zoom >= 11 ? 0.015 : (zoom >= 9 ? 0.026 : 0.04);
-  const buckets = new Map();
-  for (const s of stations) {
-    const lat = Number(s?.lat);
-    const lon = Number(s?.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    if (!bounds.contains([lat, lon])) continue;
-    const key = `${Math.round(lat / cellSize)}:${Math.round(lon / cellSize)}`;
-    const candidateName = normalizeRailNodeName(s?.name);
-    const candidateScore = /station|junction|interchange/i.test(candidateName) ? 2 : 1;
-    const prev = buckets.get(key);
-    if (!prev || candidateScore > prev.score) {
-      buckets.set(key, { score: candidateScore, station: s });
-    }
-  }
-  return Array.from(buckets.values()).map((v) => v.station);
-}
-
-function buildRailNodePopupHtml(node) {
-  const lat = Number(node?.lat);
-  const lon = Number(node?.lon);
-  const name = normalizeRailNodeName(node?.name);
-  const kind = getRailNodeKind(name);
-  const typeLabel = kind.charAt(0).toUpperCase() + kind.slice(1);
-  return (
-    `<div class="rail-node-popup">` +
-      `<div class="rail-node-popup-head">` +
-        `<img src="${NATIONAL_RAIL_LOGO_PATH}" alt="National Rail" class="rail-node-logo" loading="lazy">` +
-        `<strong>${escapeHtml(name)}</strong>` +
-      `</div>` +
-      `<span class="popup-label">Category</span> ${escapeHtml(typeLabel)}<br>` +
-      `<span class="popup-label">Coordinates</span> ${lat.toFixed(5)}, ${lon.toFixed(5)}` +
-    `</div>`
-  );
-}
-
-function renderRailNodes(stations, bounds, zoom) {
-  const sampled = chooseRailNodeSample(stations, bounds, zoom);
-  for (const s of sampled) {
-    const lat = Number(s?.lat);
-    const lon = Number(s?.lon);
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
-    const marker = L.circleMarker([lat, lon], {
-      radius: zoom >= 10 ? 3.4 : 2.6,
-      color: "#e0f2fe",
-      fillColor: "#38bdf8",
-      fillOpacity: 0.88,
-      weight: 1.25,
-      className: "os-rail-static-node"
-    }).addTo(OS_DERIVED_STATE.railLayer);
-    marker.bindPopup(buildRailNodePopupHtml(s));
-    if (s.name && zoom >= 10) marker.bindTooltip(escapeHtml(normalizeRailNodeName(s.name)), { sticky: true, opacity: 0.82 });
-  }
-}
-
-function renderStaticRoadOverlay() {
-  if (!OS_DERIVED_STATE.roadsLayer || !OS_DERIVED_STATE.roadsData) return;
-  if (OS_DERIVED_STATE.roadsPolylineMode) {
-    renderStaticRoadPolylineOverlay();
-    return;
-  }
-  const sig = getStaticRenderSignature();
-  if (sig === OS_DERIVED_STATE.roadsStaticRenderSig) return;
-  OS_DERIVED_STATE.roadsStaticRenderSig = sig;
-  const routes = Array.isArray(OS_DERIVED_STATE.roadsData.routes) ? OS_DERIVED_STATE.roadsData.routes : [];
-  const bounds = getExpandedBounds(0.5);
-  const zoom = map.getZoom();
-  OS_DERIVED_STATE.roadsLayer.clearLayers();
-  OS_DERIVED_STATE.roadsRenderedSegments = [];
-
-  const visibleRoutes = routes.filter((r) => {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    return coords.length >= 2 && staticRoadVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
-  });
-  const orderedVisibleRoutes = [...visibleRoutes].sort((a, b) => {
-    const w = { motorway: 1, trunk: 2, primary: 3, secondary: 4, tertiary: 5 };
-    const ta = String(a?.type || "").toLowerCase();
-    const tb = String(b?.type || "").toLowerCase();
-    const wa = Number(w[ta] || 9);
-    const wb = Number(w[tb] || 9);
-    if (wa !== wb) return wb - wa;
-    return routeLengthKm(a?.coords || []) - routeLengthKm(b?.coords || []);
-  }).slice(0, roadDisplayRouteLimitForZoom(zoom));
-
-  for (const r of orderedVisibleRoutes) {
-    const rawCoords = Array.isArray(r?.coords) ? r.coords : [];
-    const coords = simplifyRoadRouteForDisplay(rawCoords, zoom);
-    if (!Array.isArray(coords) || coords.length < 2) continue;
-    const lineKey = normalizeRoadLineKey(r?.type, r?.name);
-    const totalKm = routeLengthKm(rawCoords);
-    const t = String(r?.type || "").toLowerCase();
-    const baseWeight = t === "motorway" ? (zoom <= 8 ? 3.8 : 4.6)
-      : t === "trunk" ? (zoom <= 8 ? 3.2 : 4.0)
-      : t === "primary" ? (zoom <= 8 ? 2.8 : 3.5)
-      : (zoom <= 8 ? 2.3 : 2.9);
-    const line = L.polyline(coords, {
-      color: osRoadColorForFeature({ highway: r.type, name: r.name }),
-      weight: baseWeight,
-      opacity: 0.92,
-      smoothFactor: 1.8,
-      className: "os-road-static-line os-road-line-interactive"
-    }).addTo(OS_DERIVED_STATE.roadsLayer);
-    line.bindPopup(buildOsRoadLinePopupHtml(r, lineKey, totalKm));
-    line.on("click", () => {
-      if (lineKey) OS_DERIVED_STATE.roadsSelectedLineKey = lineKey;
-      applyOsRoadSelectionStyles();
-    });
-    if (r.name && zoom >= 9) {
-      line.bindTooltip(`${escapeHtml(r.name)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.88 });
-    }
-    OS_DERIVED_STATE.roadsRenderedSegments.push({ layer: line, lineKey, totalKm, baseWeight });
-  }
-  applyOsRoadSelectionStyles();
-}
-
-function renderStaticRailOverlay() {
-  if (!OS_DERIVED_STATE.railLayer || !OS_DERIVED_STATE.railData) return;
-  if (OS_DERIVED_STATE.railPolylineMode) {
-    renderStaticRailPolylineOverlay();
-    return;
-  }
-  const sig = getStaticRenderSignature();
-  if (sig === OS_DERIVED_STATE.railStaticRenderSig) return;
-  OS_DERIVED_STATE.railStaticRenderSig = sig;
-  const routes = Array.isArray(OS_DERIVED_STATE.railData.routes) ? OS_DERIVED_STATE.railData.routes : [];
-  const stations = Array.isArray(OS_DERIVED_STATE.railStationData?.stations) ? OS_DERIVED_STATE.railStationData.stations : [];
-  const bounds = getExpandedBounds(0.5);
-  const zoom = map.getZoom();
-  OS_DERIVED_STATE.railLayer.clearLayers();
-  OS_DERIVED_STATE.railRenderedSegments = [];
-
-  const visibleCandidates = routes.filter((r) => {
-    const coords = Array.isArray(r?.coords) ? r.coords : [];
-    return coords.length >= 2 && staticRailVisibleAtZoom(r?.type, zoom) && staticRouteInBounds(coords, bounds);
-  });
-  const displayRoutes = [...visibleCandidates]
-    .sort((a, b) => {
-      const t = { rail: 1, light_rail: 2, subway: 3, tram: 4, narrow_gauge: 5 };
-      const ta = String(a?.type || "").toLowerCase();
-      const tb = String(b?.type || "").toLowerCase();
-      const wa = Number(t[ta] || 9);
-      const wb = Number(t[tb] || 9);
-      if (wa !== wb) return wb - wa;
-      return routeLengthKm(b?.coords || []) - routeLengthKm(a?.coords || []);
-    })
-    .slice(0, railDisplayRouteLimitForZoom(zoom));
-
-  for (const r of displayRoutes) {
-    const rawCoords = Array.isArray(r?.coords) ? r.coords : [];
-    const coords = simplifyRailRouteForDisplay(rawCoords, zoom);
-    if (!Array.isArray(coords) || coords.length < 2) continue;
-    const lineKey = normalizeRailLineKey(r?.type, r?.name);
-    const totalKm = routeLengthKm(rawCoords);
-    const t = String(r?.type || "").toLowerCase();
-    const baseWeight = t === "rail" ? (zoom <= 8 ? 3.0 : 3.8)
-      : (zoom <= 8 ? 2.4 : 3.1);
-    const line = L.polyline(coords, {
-      color: osRailColorForFeature({ railway: r.type, name: r.name }),
-      weight: baseWeight,
-      opacity: 0.93,
-      smoothFactor: 1.8,
-      className: "os-rail-static-line os-rail-line-interactive"
-    }).addTo(OS_DERIVED_STATE.railLayer);
-    line.bindPopup(buildOsRailLinePopupHtml(r, lineKey, totalKm));
-    line.on("click", () => {
-      if (lineKey) OS_DERIVED_STATE.railSelectedLineKey = lineKey;
-      applyOsRailSelectionStyles();
-    });
-    const tipName = r.displayName || r.name;
-    if (tipName && zoom >= 9) {
-      line.bindTooltip(`${escapeHtml(tipName)}${r.type ? ` (${escapeHtml(r.type)})` : ""}`, { sticky: true, opacity: 0.9 });
-    }
-    OS_DERIVED_STATE.railRenderedSegments.push({ layer: line, lineKey, totalKm, baseWeight });
-  }
-  applyOsRailSelectionStyles();
-
-  if (zoom < 7) return;
-  renderRailNodes(stations, bounds, zoom);
-
-  // No synthetic nearest-station links in static rail mode:
-  // they can create patchy diagonals and inconsistent line coloring.
-}
-
-async function loadOsRoadOverlay() {
-  if (OS_DERIVED_STATE.roadsLoaded || OS_DERIVED_STATE.roadsFailed) return;
-  if (map.getZoom() < 6) {
-    setStatus("Zoom in to level 6+ to load OS roads overlay.");
-    return;
-  }
-  try {
-    // Rebuilt pipeline: prefer full osm_derived lite GeoJSON first.
-    // Core/polyline packs remain fallback only.
-    const roadsGeo = await fetchGeoJsonFromCandidates([
-      "data/osm_derived/gb_major_roads_lite.geojson"
-    ]);
-    if (roadsGeo?.data?.type === "FeatureCollection") {
-      OS_DERIVED_STATE.roadsData = { routes: extractRoutesFromGeoJson(roadsGeo.data, "road") };
-      OS_DERIVED_STATE.roadsMergedRoutes = [];
-      OS_DERIVED_STATE.roadsPolylineSegments = [];
-      OS_DERIVED_STATE.roadsPolylineMode = false;
-      OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
-      OS_DERIVED_STATE.roadsLoaded = true;
-      OS_DERIVED_STATE.roadsStatic = true;
-      OS_DERIVED_STATE.roadsStaticRenderSig = "";
-      console.info(`[os_roads] using dataset: ${roadsGeo.path}`);
-      renderStaticRoadOverlay();
-      markLayerAsStaticMode("os_roads", "osm_derived");
-      setStatus("OS roads overlay loaded.");
-      return;
-    }
-
-    const staticPicked = await fetchJsonFromCandidates([
-      "data/transport_static/roads_core.json",
-      "data/transport_static/uk-roads.json"
-    ]);
-    const staticRoadPayload = (staticPicked && typeof staticPicked.data === "object" && staticPicked.data)
-      ? staticPicked.data
-      : staticPicked;
-    if (staticPicked?.path) console.info(`[os_roads] using dataset: ${staticPicked.path}`);
-    if (staticRoadPayload && Array.isArray(staticRoadPayload.polylines) && staticRoadPayload.polylines.length) {
-      OS_DERIVED_STATE.roadsData = { routes: [] };
-      OS_DERIVED_STATE.roadsMergedRoutes = [];
-      OS_DERIVED_STATE.roadsPolylineSegments = buildStaticPolylineSegments(staticRoadPayload, "road");
-      OS_DERIVED_STATE.roadsPolylineMode = true;
-      OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
-      OS_DERIVED_STATE.roadsLoaded = true;
-      OS_DERIVED_STATE.roadsStatic = true;
-      OS_DERIVED_STATE.roadsStaticRenderSig = "";
-      renderStaticRoadOverlay();
-      markLayerAsStaticMode("os_roads");
-      setStatus("OS roads overlay loaded (UK polyline pack).");
-      return;
-    }
-    if (staticRoadPayload && Array.isArray(staticRoadPayload.routes) && staticRoadPayload.routes.length) {
-      OS_DERIVED_STATE.roadsData = staticRoadPayload;
-      OS_DERIVED_STATE.roadsMergedRoutes = mergeStaticRoadRoutes(staticRoadPayload.routes || []);
-      OS_DERIVED_STATE.roadsPolylineSegments = [];
-      OS_DERIVED_STATE.roadsPolylineMode = false;
-      OS_DERIVED_STATE.roadsLayer = L.featureGroup().addTo(layers.os_roads);
-      OS_DERIVED_STATE.roadsLoaded = true;
-      OS_DERIVED_STATE.roadsStatic = true;
-      OS_DERIVED_STATE.roadsStaticRenderSig = "";
-      renderStaticRoadOverlay();
-      markLayerAsStaticMode("os_roads");
-      setStatus("OS roads overlay loaded (static core).");
-      return;
-    }
-    throw new Error("Missing data/transport_static/roads_core.json routes payload");
-  } catch (err) {
-    OS_DERIVED_STATE.roadsFailed = true;
-    console.warn("OS major roads overlay unavailable:", err);
-    markOsDerivedLayerUnavailable("os_roads", "Static roads core data is not available.");
-    notifyOsDerivedUnavailableOnce("OS-derived overlays unavailable in this build.");
-  }
-}
-
-// TfL (Transport for London) ALL stations - Underground, DLR, Overground, Tram, Rail
+// OS-derived rail/major-road legacy module removed.\r\n\r\n// TfL (Transport for London) ALL stations - Underground, DLR, Overground, Tram, Rail
 
 // Map line names to roundel logo files
 function getTfLRoundelIcon(lines) {
@@ -6269,12 +4971,6 @@ async function addPersonToMap(officerName, address, companies = [], options = {}
   }
 }
 
-map.on("moveend zoomend", () => {
-  if (map.hasLayer(layers.os_roads) && OS_DERIVED_STATE.roadsLoaded) {
-    renderStaticRoadOverlay();
-  }
-});
-
 function extractOfficerIdFromPath(rawPath = "") {
   const path = String(rawPath || "").trim();
   const match = path.match(/\/officers\/([^/]+)\/appointments/i);
@@ -6468,6 +5164,7 @@ async function runPscSearch() {
     
     displayPSCResults(resultsDiv, pscRecords, coVal, companyName || `Company #${coVal}`);
     setStatus(`${pscRecords.length} PSC record${pscRecords.length === 1 ? "" : "s"} for #${coVal}`);
+    if (window.CRDashboard) window.CRDashboard.addSearchHistory("psc", coVal, pscRecords.length, { companyNumber: coVal });
   } else if (nameVal && nameVal.length >= 3) {
     // Search by officer name via API
     setPscProgress("Searching officers...", 20);
@@ -6478,6 +5175,7 @@ async function runPscSearch() {
     setSkeletonVisible("psc-results-skeleton", false);
     
     // Display officer search results
+    if (window.CRDashboard) window.CRDashboard.addSearchHistory("officer", nameVal, results?.length || 0, { personName: nameVal });
     resultsDiv.innerHTML = '';
     if (!results || results.length === 0) {
       resultsDiv.innerHTML = '<div class="ch-result-count">No matches found</div>';
@@ -7097,30 +5795,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const quickLayerUndergroundBtn = document.getElementById("quick-layer-underground");
   const quickLayerFlightsBtn = document.getElementById("quick-layer-flights");
   const quickLayerHealthBtn = document.getElementById("quick-layer-health");
-  const quickLayerMapLibreBtn = document.getElementById("quick-layer-maplibre");
-  const cpOpenMaplibreBtn = document.getElementById("cp-open-maplibre");
-  const openMaplibreRailBtn = document.getElementById("open-maplibre-rail-btn");
   const layerPresetTransportBtn = document.getElementById("layer-preset-transport");
   const layerPresetIntelBtn = document.getElementById("layer-preset-intel");
   const layerPresetClearBtn = document.getElementById("layer-preset-clear");
-
-  function openUkRailVectorView(options = {}) {
-    const sameTab = options && options.sameTab === true;
-    const center = map.getCenter();
-    const zoom = map.getZoom();
-    const qs = new URLSearchParams();
-    qs.set("map", "maplibre");
-    qs.set("lng", center.lng.toFixed(5));
-    qs.set("lat", center.lat.toFixed(5));
-    qs.set("z", String(Math.max(5, Math.round(zoom))));
-    const href = `index.html?${qs.toString()}`;
-    if (sameTab) {
-      window.location.assign(href);
-      return;
-    }
-    window.open(href, "_blank", "noopener,noreferrer");
-    showToast("Opened UK Rail Vector view", "success", 1800);
-  }
 
   function setLayerEnabled(layerId, enabled) {
     const cb = document.querySelector(`.layer-cb[data-layer="${layerId}"]`);
@@ -7132,8 +5809,8 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   function applyLayerPreset(preset) {
     const presets = {
-      transport: new Set(["companies", "airports_uk", "seaports", "underground", "national_rail", "roads", "service_stations", "os_roads"]),
-      intel: new Set(["companies", "areas", "airports_uk", "underground", "flights", "roads"]),
+      transport: new Set(["companies", "airports_uk", "seaports", "underground", "national_rail", "service_stations"]),
+      intel: new Set(["companies", "areas", "airports_uk", "underground", "national_rail", "flights"]),
       clear: new Set(["companies"])
     };
     const selected = presets[preset] || presets.clear;
@@ -7155,9 +5832,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       showToast("Refreshing service health checks", "info");
     }
   });
-  quickLayerMapLibreBtn?.addEventListener("click", () => openUkRailVectorView({ sameTab: true }));
-  cpOpenMaplibreBtn?.addEventListener("click", () => openUkRailVectorView({ sameTab: true }));
-  openMaplibreRailBtn?.addEventListener("click", () => openUkRailVectorView({ sameTab: true }));
   layerPresetTransportBtn?.addEventListener("click", () => applyLayerPreset("transport"));
   layerPresetIntelBtn?.addEventListener("click", () => applyLayerPreset("intel"));
   layerPresetClearBtn?.addEventListener("click", () => applyLayerPreset("clear"));
@@ -7196,12 +5870,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     cb.addEventListener("change", async () => {
       try {
         const layerId = cb.dataset.layer;
-        if (cb.checked && layerId === "os_rail") {
-          cb.checked = false;
-          openUkRailVectorView({ sameTab: true });
-          setStatus("Opening UK Rail Vector view...");
-          return;
-        }
         const layer = layers[layerId];
         if (!layer) return;
         if (cb.checked && layerId === "areas") {
@@ -7222,16 +5890,18 @@ document.addEventListener("DOMContentLoaded", async () => {
           const ok = await ensureUndergroundLoaded();
           if (!ok) { cb.checked = false; return; }
         }
-        if (cb.checked && cb.dataset.layer === "os_roads") {
-          if (map.getZoom() < 6) {
-            cb.checked = false;
-            setStatus("Zoom in to level 6+ before enabling OS roads.");
-            return;
+        if (cb.checked && layerId === "national_rail") {
+          if (typeof window.ensureNationalRailLoaded === "function") {
+            const ok = await window.ensureNationalRailLoaded();
+            if (!ok) { cb.checked = false; return; }
           }
-          await loadOsRoadOverlay();
         }
         if (cb.checked) { layer.addTo(map); }
         else { map.removeLayer(layer); }
+        // Log layer toggle
+        if (window.CRDashboard) {
+          window.CRDashboard.logActivity(cb.checked ? "Layer enabled" : "Layer disabled", layerId, "layer");
+        }
       } finally {
         syncLayerToolBlocks();
         updateDashboardCounts();
@@ -7244,6 +5914,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const airportSearchInput = document.getElementById("airport-search-q");
   const airportSearchBtn = document.getElementById("airport-search-btn");
   const airportSearchClearBtn = document.getElementById("airport-search-clear-btn");
+  const ssFilterFuel = document.getElementById("ss-filter-fuel");
+  const ssFilterCharging = document.getElementById("ss-filter-charging");
+  const ssFilterVehicle = document.getElementById("ss-filter-vehicle");
+  const ssFilterTruck = document.getElementById("ss-filter-truck");
+  const ssFilterGeneral = document.getElementById("ss-filter-general");
+  const ssFilterAllBtn = document.getElementById("ss-filter-all-btn");
+  const ssFilterNoneBtn = document.getElementById("ss-filter-none-btn");
   const runAirportSearch = async () => {
     const q = String(airportSearchInput?.value || "").trim();
     if (!q) {
@@ -7275,6 +5952,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (wrap) wrap.innerHTML = "";
   });
 
+  [ssFilterFuel, ssFilterCharging, ssFilterVehicle, ssFilterTruck, ssFilterGeneral].forEach((el) => {
+    el?.addEventListener("change", syncServiceStationFilterFromUI);
+  });
+  ssFilterAllBtn?.addEventListener("click", () => setServiceStationFiltersAll(true));
+  ssFilterNoneBtn?.addEventListener("click", () => setServiceStationFiltersAll(false));
+
   // â”€â”€ Live company search DISABLED (now using API on button click) â”€â”€
   // const debouncedSearch = debounce(() => liveSearch(resultsDiv), 300);
   // inputs.forEach(input => input.addEventListener("input", debouncedSearch));
@@ -7297,6 +5980,14 @@ document.addEventListener("DOMContentLoaded", async () => {
       setSkeletonVisible("ch-results-skeleton", false);
       CH_LAST_RESULTS = matches;
       renderResults(resultsDiv, matches, false);
+
+      // Log to search history
+      if (window.CRDashboard) {
+        const query = criteria.name || criteria.number || criteria.postcode || "search";
+        window.CRDashboard.addSearchHistory("company", query, matches.length, {
+          name: criteria.name, number: criteria.number
+        });
+      }
 
       if (matches.length) {
         setStatus(`Search returned ${matches.length} result${matches.length === 1 ? "" : "s"} - click entries to plot selected companies`);
