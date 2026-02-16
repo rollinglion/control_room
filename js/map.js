@@ -5487,6 +5487,43 @@ document.addEventListener("DOMContentLoaded", async () => {
   entityPanelClose?.addEventListener('click', closeEntityPanel);
   entityCancelBtn?.addEventListener('click', closeEntityPanel);
 
+  // Show a preview card for imported documents (non-entity, non-intel files)
+  async function showDocumentPreview(file, text, summaryEl) {
+    const analyser = window.DocConverter?.analyseFile;
+    let meta = null;
+    if (analyser) {
+      try { meta = await analyser(file); } catch (e) { console.warn("Analyse failed:", e); }
+    }
+    const originator = meta?.originator || "Unknown Source";
+    const description = meta?.description || "Document";
+    const concerns = meta?.concerns || file.name;
+    const preview = text.length > 1200 ? text.substring(0, 1200) + "\u2026" : text;
+
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        <div class="doc-preview-card">
+          <div class="doc-preview-header">
+            <span class="doc-preview-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+            <span class="dc-badge dc-badge-orig">${escapeHtml(originator)}</span>
+          </div>
+          <div class="doc-preview-subject">${escapeHtml(concerns)}</div>
+          <div class="doc-preview-desc">${escapeHtml(description)}</div>
+          <div class="doc-preview-body"><pre class="dc-preview-text">${escapeHtml(preview)}</pre></div>
+          ${text.length > 1200 ? '<button class="doc-preview-expand">Show full text</button>' : ""}
+        </div>`;
+      const expandBtn = summaryEl.querySelector(".doc-preview-expand");
+      if (expandBtn) {
+        expandBtn.addEventListener("click", () => {
+          const pre = summaryEl.querySelector(".dc-preview-text");
+          if (pre) pre.textContent = text;
+          expandBtn.remove();
+        });
+      }
+    }
+    setStatus(`Previewing: ${file.name} (${originator})`);
+    showToast(`${originator} document loaded — preview below`, "success", 3000);
+  }
+
   entityImportRunBtn?.addEventListener('click', async () => {
     const file = entityImportFile?.files?.[0];
     const summaryEl = document.getElementById('entity-import-summary');
@@ -5517,7 +5554,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (window.IntelImport?.detectIntelReport(text)) {
           await window.IntelImport.importFromText(text, file.name);
         } else {
-          throw new Error("PDF does not appear to be an intel report. Use .xlsx/.csv for entity import.");
+          showDocumentPreview(file, text, summaryEl);
         }
       } else if (["csv", "tsv", "txt"].includes(ext)) {
         const text = await file.text();
@@ -5534,7 +5571,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (window.IntelImport?.detectIntelReport(text)) {
           await window.IntelImport.importFromText(text, file.name);
         } else {
-          throw new Error(`Imported ${ext.toUpperCase()} text but it's not an intel report. Use .xlsx/.csv for entity import.`);
+          showDocumentPreview(file, text, summaryEl);
         }
       } else if (["geojson"].includes(ext)) {
         await importGeoJsonFile(file);

@@ -322,6 +322,7 @@
       description,
       extension: ext,
       file,
+      text,
     };
   }
 
@@ -412,7 +413,10 @@
       return;
     }
 
-    const html = converterResults.map((r, i) => `
+    const html = converterResults.map((r, i) => {
+      const previewText = r.text || "";
+      const truncated = previewText.length > 800 ? previewText.substring(0, 800) + "..." : previewText;
+      return `
       <div class="dc-result${r.error ? " dc-error" : ""}">
         <div class="dc-original" title="${escHtml(r.originalName)}">
           <span class="dc-label">Original:</span> ${escHtml(r.originalName)}
@@ -431,9 +435,14 @@
         <div class="dc-actions">
           <button class="dc-dl-btn" data-idx="${i}" title="Download renamed file">Download</button>
           <button class="dc-dl-desc-btn" data-idx="${i}" title="Download description sidecar">Desc .txt</button>
+          <button class="dc-preview-btn" data-idx="${i}" title="Preview extracted text">Preview</button>
         </div>
-      </div>
-    `).join("");
+        <div class="dc-preview" data-idx="${i}" style="display:none">
+          <pre class="dc-preview-text">${escHtml(truncated)}</pre>
+          ${previewText.length > 800 ? `<button class="dc-preview-more" data-idx="${i}">Show full text</button>` : ""}
+        </div>
+      </div>`;
+    }).join("");
 
     container.innerHTML = html;
 
@@ -448,6 +457,28 @@
       btn.addEventListener("click", () => {
         const r = converterResults[+btn.dataset.idx];
         if (r) downloadDescription(r.convertedName, r.description);
+      });
+    });
+    // Wire up preview toggle buttons
+    container.querySelectorAll(".dc-preview-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const preview = container.querySelector(`.dc-preview[data-idx="${btn.dataset.idx}"]`);
+        if (preview) {
+          const visible = preview.style.display !== "none";
+          preview.style.display = visible ? "none" : "block";
+          btn.textContent = visible ? "Preview" : "Hide";
+        }
+      });
+    });
+    // Wire up "Show full text" buttons
+    container.querySelectorAll(".dc-preview-more").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const r = converterResults[+btn.dataset.idx];
+        const pre = btn.previousElementSibling;
+        if (r && pre) {
+          pre.textContent = r.text;
+          btn.remove();
+        }
       });
     });
   }

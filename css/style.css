@@ -5681,7 +5681,7 @@ button.flight-filter-item span {
   color: #c7d2fe;
 }
 .dc-results {
-  max-height: 260px;
+  max-height: 400px;
   overflow-y: auto;
   margin-top: 8px;
 }
@@ -5778,6 +5778,97 @@ button.flight-filter-item span {
   cursor: pointer;
   transition: background 0.15s;
 }
-.dc-dl-btn:hover, .dc-dl-desc-btn:hover {
+.dc-dl-btn:hover, .dc-dl-desc-btn:hover, .dc-preview-btn:hover {
   background: rgba(99, 102, 241, 0.25);
 }
+.dc-preview-btn {
+  font-size: 0.65rem;
+  padding: 2px 8px;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  border-radius: 4px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #c7d2fe;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.dc-preview {
+  margin-top: 6px;
+  border-top: 1px solid var(--ui-border);
+  padding-top: 6px;
+}
+.dc-preview-text {
+  font-family: 'Bahnschrift Light', 'Segoe UI', monospace;
+  font-size: 0.65rem;
+  line-height: 1.4;
+  color: var(--ui-subtle);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+.dc-preview-more {
+  font-size: 0.62rem;
+  padding: 2px 8px;
+  margin-top: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #a5b4fc;
+  cursor: pointer;
+}
+.dc-preview-more:hover { background: rgba(99, 102, 241, 0.2); }
+
+/* Document preview card (entity import panel) */
+.doc-preview-card {
+  background: rgba(15, 17, 26, 0.7);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-top: 6px;
+}
+.doc-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.doc-preview-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--ui-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+.doc-preview-subject {
+  font-size: 0.7rem;
+  color: var(--ui-accent);
+  margin-bottom: 2px;
+}
+.doc-preview-desc {
+  font-size: 0.68rem;
+  color: var(--ui-subtle);
+  font-style: italic;
+  margin-bottom: 6px;
+}
+.doc-preview-body {
+  max-height: 300px;
+  overflow-y: auto;
+}
+.doc-preview-expand {
+  font-size: 0.62rem;
+  padding: 2px 8px;
+  margin-top: 4px;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.08);
+  color: #a5b4fc;
+  cursor: pointer;
+}
+.doc-preview-expand:hover { background: rgba(99, 102, 241, 0.2); }
