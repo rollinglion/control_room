@@ -42,7 +42,8 @@
     underground:     "#f43f5e",
     national_rail:   "#38bdf8",
     flights:         "#f59e0b",
-    bikes:           "#22c55e"
+    bikes:           "#22c55e",
+    stop_search:     "#f472b6"
   },
 
   // FlightRadar-backed flight tracking

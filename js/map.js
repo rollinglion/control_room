@@ -101,6 +101,847 @@ async function loadCompaniesHouseIndex() {
     CH_INDEX = await r.json();
   } catch (e) { console.warn("Company index load failed:", e); }
 }
+let CRIME_DATA = [];
+// â”€â”€ Crime Loader Function â”€â”€
+let CRIME_FORCE_MAP = new Map();
+let CRIME_TYPES = new Set();
+let CRIME_TYPE_STATS = new Map();
+let CRIME_MONTHS = [];
+let CRIME_DEFAULT_MONTH_START = 0;
+let CRIME_FILTER_STATE = {
+  forces: new Set(),
+  types: new Set(),
+  monthStartIndex: 0
+};
+let CRIME_LAST_RENDER_TOTAL = 0;
+let CRIME_LAST_RENDER_FILTERED = 0;
+
+const CRIME_FILTER_UI = {
+  initialized: false,
+  forceSelect: null,
+  typeSelect: null,
+  statusLabel: null,
+  showAllBtn: null,
+  filterForceBtn: null,
+  resetBtn: null,
+  applyBtn: null,
+  clearBtn: null,
+  monthSlider: null,
+  monthLabel: null,
+  windowPills: [],
+  summaryIncidents: null,
+  summaryStops: null,
+  summaryOutcomes: null,
+  summaryCells: null
+};
+
+const CRIME_INSPECTOR_UI = {
+  container: null,
+  empty: null,
+  body: null,
+  title: null,
+  subtitle: null,
+  range: null,
+  incidents: null,
+  stops: null,
+  outcomes: null,
+  timeline: null,
+  incidentList: null,
+  incidentEmpty: null,
+  zoomBtn: null,
+  clearBtn: null,
+  clearPinsBtn: null
+};
+
+const CRIME_INSPECTOR_STATE = {
+  feature: null,
+  marker: null,
+  stats: null
+};
+
+let CRIME_INCIDENT_LAYER = null;
+
+function initCrimeFilterUI() {
+  if (CRIME_FILTER_UI.initialized) return;
+  CRIME_FILTER_UI.forceSelect = document.getElementById("crime-force-filter");
+  CRIME_FILTER_UI.typeSelect = document.getElementById("crime-type-filter");
+  CRIME_FILTER_UI.statusLabel = document.getElementById("crime-filter-status");
+  CRIME_FILTER_UI.showAllBtn = document.getElementById("crime-show-all-btn");
+  CRIME_FILTER_UI.filterForceBtn = document.getElementById("crime-filter-force-btn");
+  CRIME_FILTER_UI.resetBtn = document.getElementById("crime-reset-filter-btn");
+  CRIME_FILTER_UI.clearBtn = document.getElementById("crime-clear-filter-btn");
+  CRIME_FILTER_UI.monthSlider = document.getElementById("crime-month-slider");
+  CRIME_FILTER_UI.monthLabel = document.getElementById("crime-month-slider-label");
+  CRIME_FILTER_UI.windowPills = Array.from(document.querySelectorAll(".crime-window-pill"));
+  CRIME_FILTER_UI.summaryIncidents = document.getElementById("crime-summary-incidents");
+  CRIME_FILTER_UI.summaryStops = document.getElementById("crime-summary-stops");
+  CRIME_FILTER_UI.summaryOutcomes = document.getElementById("crime-summary-outcomes");
+  CRIME_FILTER_UI.summaryCells = document.getElementById("crime-summary-cells");
+
+  initCrimeInspectorUI();
+
+  CRIME_FILTER_UI.initialized = !!(CRIME_FILTER_UI.forceSelect && CRIME_FILTER_UI.typeSelect);
+  if (!CRIME_FILTER_UI.initialized) return;
+
+  const rerender = () => renderCrimeLayerFiltered();
+
+  CRIME_FILTER_UI.forceSelect?.addEventListener("change", () => {
+    updateCrimeFiltersFromSelects();
+    rerender();
+  });
+  CRIME_FILTER_UI.typeSelect?.addEventListener("change", () => {
+    updateCrimeFiltersFromSelects();
+    rerender();
+  });
+
+  CRIME_FILTER_UI.showAllBtn?.addEventListener("click", () => {
+    clearCrimeFilters();
+    rerender();
+    showToast?.("Crime grid reset to all forces", "info");
+  });
+
+  CRIME_FILTER_UI.resetBtn?.addEventListener("click", () => {
+    clearCrimeFilters();
+    setActiveForce(null, { silent: true });
+    rerender();
+    showToast?.("Crime filters reset", "info");
+  });
+
+  CRIME_FILTER_UI.monthSlider?.addEventListener("input", () => {
+    const idx = Number(CRIME_FILTER_UI.monthSlider.value || 0);
+    setCrimeMonthStartIndex(idx, { silent: true });
+  });
+  CRIME_FILTER_UI.monthSlider?.addEventListener("change", () => {
+    const idx = Number(CRIME_FILTER_UI.monthSlider.value || 0);
+    setCrimeMonthStartIndex(idx);
+    rerender();
+  });
+
+  CRIME_FILTER_UI.windowPills.forEach((pill) => {
+    pill.addEventListener("click", () => {
+      const months = Number(pill.dataset.monthWindow || 0);
+      setCrimeMonthWindow(months);
+      rerender();
+    });
+  });
+
+  updateCrimeTimelineControls();
+
+  CRIME_FILTER_UI.filterForceBtn?.addEventListener("click", () => {
+    if (!ACTIVE_FORCE) {
+      showToast?.("Select a police force area first", "info");
+      setStatus?.("Select a police force area, then apply the force filter");
+      return;
+    }
+    CRIME_FILTER_STATE.forces = new Set([ACTIVE_FORCE]);
+    syncCrimeFilterStateToUI();
+    rerender();
+    showToast?.(`Crime layer filtered to ${ACTIVE_FORCE}`, "success");
+  });
+
+  if (OVERLAY_LOAD_STATE?.crimeLoaded) {
+    populateCrimeFilters();
+  } else {
+    updateCrimeFilterStatus();
+  }
+}
+
+function formatCrimeNumber(value) {
+  const num = Number(value || 0);
+  return Number.isFinite(num) ? num.toLocaleString() : "0";
+}
+
+function normalizeCrimeFeatureForces(feature) {
+  if (!feature) return ["Unknown Force"];
+  if (feature.__forceCache) return feature.__forceCache;
+  const props = feature.properties || {};
+  const source = [];
+  if (props.reported_by) source.push(String(props.reported_by));
+  if (Array.isArray(props.forces)) source.push(...props.forces.map(String));
+  const cleaned = [...new Set(source.map((f) => String(f || "").trim()).filter(Boolean))];
+  feature.__forceCache = cleaned.length ? cleaned : ["Unknown Force"];
+  return feature.__forceCache;
+}
+
+function clearCrimeFilters() {
+  CRIME_FILTER_STATE.forces = new Set();
+  CRIME_FILTER_STATE.types = new Set();
+  setCrimeMonthStartIndex(CRIME_DEFAULT_MONTH_START, { silent: true });
+  if (!CRIME_FILTER_UI.initialized) {
+    updateCrimeFilterStatus();
+    return;
+  }
+  Array.from(CRIME_FILTER_UI.forceSelect?.options || []).forEach((opt) => { opt.selected = false; });
+  Array.from(CRIME_FILTER_UI.typeSelect?.options || []).forEach((opt) => { opt.selected = false; });
+  updateCrimeFiltersFromSelects();
+  updateCrimeTimelineControls();
+}
+
+function syncCrimeFilterStateToUI() {
+  if (!CRIME_FILTER_UI.initialized) return;
+  Array.from(CRIME_FILTER_UI.forceSelect?.options || []).forEach((opt) => {
+    opt.selected = CRIME_FILTER_STATE.forces.has(opt.value);
+  });
+  Array.from(CRIME_FILTER_UI.typeSelect?.options || []).forEach((opt) => {
+    opt.selected = CRIME_FILTER_STATE.types.has(opt.value);
+  });
+}
+
+function updateCrimeFilterStatus(stats = null) {
+  if (!CRIME_FILTER_UI.statusLabel) return;
+  const filtered = stats?.filtered ?? CRIME_LAST_RENDER_FILTERED;
+  const total = stats?.total ?? CRIME_LAST_RENDER_TOTAL;
+  const pieces = [];
+  if (!total) {
+    pieces.push("Crime data pending");
+  } else if (!CRIME_FILTER_STATE.forces.size && !CRIME_FILTER_STATE.types.size) {
+    pieces.push(`Showing ${formatCrimeNumber(filtered)} grid cells`);
+  } else {
+    pieces.push(`Filtering ${formatCrimeNumber(filtered)} of ${formatCrimeNumber(total)} cells`);
+    if (CRIME_FILTER_STATE.forces.size) {
+      pieces.push(`${CRIME_FILTER_STATE.forces.size} force${CRIME_FILTER_STATE.forces.size === 1 ? "" : "s"}`);
+    }
+    if (CRIME_FILTER_STATE.types.size) {
+      pieces.push(`${CRIME_FILTER_STATE.types.size} type${CRIME_FILTER_STATE.types.size === 1 ? "" : "s"}`);
+    }
+  }
+  if (ACTIVE_FORCE && !CRIME_FILTER_STATE.forces.size) {
+    pieces.push(`Selected force: ${ACTIVE_FORCE}`);
+  }
+  if (CRIME_MONTHS.length) {
+    pieces.push(describeCrimeMonthRange());
+  }
+  CRIME_FILTER_UI.statusLabel.textContent = pieces.join(" | ");
+}
+
+function populateCrimeFilters() {
+  if (!CRIME_FILTER_UI.initialized) return;
+  const { forceSelect, typeSelect } = CRIME_FILTER_UI;
+  if (forceSelect) {
+    forceSelect.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    Array.from(CRIME_FORCE_MAP.entries())
+      .map(([name, stats]) => ({
+        name,
+        crimes: Number(stats?.crimes || 0),
+        stops: Number(stats?.stops || 0)
+      }))
+      .sort((a, b) => (b.crimes - a.crimes) || a.name.localeCompare(b.name))
+      .forEach((entry) => {
+        const opt = document.createElement("option");
+        opt.value = entry.name;
+        const stopText = entry.stops ? ` - ${formatCrimeNumber(entry.stops)} stop/search` : "";
+        opt.textContent = `${entry.name} (${formatCrimeNumber(entry.crimes)} incidents${stopText})`;
+        frag.appendChild(opt);
+      });
+    forceSelect.appendChild(frag);
+  }
+
+  if (typeSelect) {
+    typeSelect.innerHTML = "";
+    const frag = document.createDocumentFragment();
+    Array.from(CRIME_TYPE_STATS.entries())
+      .map(([type, stats]) => ({ type, crimes: Number(stats?.crimes || 0) }))
+      .sort((a, b) => (b.crimes - a.crimes) || a.type.localeCompare(b.type))
+      .forEach((entry) => {
+        const opt = document.createElement("option");
+        opt.value = entry.type;
+        opt.textContent = `${entry.type} (${formatCrimeNumber(entry.crimes)})`;
+        frag.appendChild(opt);
+      });
+    typeSelect.appendChild(frag);
+  }
+
+  syncCrimeFilterStateToUI();
+  updateCrimeFilterStatus();
+}
+
+function updateCrimeFiltersFromSelects() {
+  if (!CRIME_FILTER_UI.initialized) return;
+  const selectedForces = Array.from(CRIME_FILTER_UI.forceSelect?.selectedOptions || [])
+    .map((opt) => opt.value)
+    .filter(Boolean);
+  const selectedTypes = Array.from(CRIME_FILTER_UI.typeSelect?.selectedOptions || [])
+    .map((opt) => opt.value)
+    .filter(Boolean);
+  CRIME_FILTER_STATE.forces = new Set(selectedForces);
+  CRIME_FILTER_STATE.types = new Set(selectedTypes);
+  updateCrimeFilterStatus();
+}
+
+const MONTH_SHORT_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function formatMonthLabel(value) {
+  if (!value) return "Unknown";
+  const [yearStr, monthStr] = String(value).split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return value;
+  return `${MONTH_SHORT_NAMES[month - 1]} ${year}`;
+}
+
+function getActiveMonthStart() {
+  if (!CRIME_MONTHS.length) return null;
+  const idx = Math.min(Math.max(CRIME_FILTER_STATE.monthStartIndex || 0, 0), CRIME_MONTHS.length - 1);
+  return CRIME_MONTHS[idx] || null;
+}
+
+function describeCrimeMonthRange() {
+  if (!CRIME_MONTHS.length) return "Timeline pending";
+  const startIdx = Math.min(Math.max(CRIME_FILTER_STATE.monthStartIndex || 0, 0), CRIME_MONTHS.length - 1);
+  const startMonth = CRIME_MONTHS[startIdx];
+  const endMonth = CRIME_MONTHS[CRIME_MONTHS.length - 1];
+  const span = CRIME_MONTHS.length - startIdx;
+  if (startIdx === 0) {
+    return `All ${CRIME_MONTHS.length} months (through ${formatMonthLabel(endMonth)})`;
+  }
+  return `Last ${span} month${span === 1 ? "" : "s"} · ${formatMonthLabel(startMonth)} → ${formatMonthLabel(endMonth)}`;
+}
+
+function setCrimeMonthStartIndex(index, opts = {}) {
+  const hasMonths = CRIME_MONTHS.length > 0;
+  const maxIdx = hasMonths ? Math.max(CRIME_MONTHS.length - 1, 0) : 0;
+  const next = Math.max(0, Math.min(Number.isFinite(index) ? Number(index) : 0, maxIdx));
+  CRIME_FILTER_STATE.monthStartIndex = next;
+  updateCrimeTimelineControls();
+  if (!opts.silent) {
+    updateCrimeFilterStatus();
+  }
+}
+
+function setCrimeMonthWindow(monthCount, opts = {}) {
+  if (!CRIME_MONTHS.length) return;
+  if (!monthCount || monthCount <= 0) {
+    setCrimeMonthStartIndex(0, opts);
+  } else {
+    const windowSize = Math.max(1, Math.min(monthCount, CRIME_MONTHS.length));
+    const startIdx = Math.max(CRIME_MONTHS.length - windowSize, 0);
+    setCrimeMonthStartIndex(startIdx, opts);
+  }
+  if (opts?.asDefault) {
+    CRIME_DEFAULT_MONTH_START = CRIME_FILTER_STATE.monthStartIndex;
+  }
+}
+
+function updateCrimeTimelineControls() {
+  const slider = CRIME_FILTER_UI.monthSlider;
+  const months = CRIME_MONTHS.length;
+  if (slider) {
+    slider.max = Math.max(months - 1, 0);
+    slider.value = Math.min(CRIME_FILTER_STATE.monthStartIndex || 0, slider.max);
+    slider.disabled = months <= 1;
+  }
+  if (CRIME_FILTER_UI.monthLabel) {
+    CRIME_FILTER_UI.monthLabel.textContent = months ? describeCrimeMonthRange() : "Timeline not available";
+  }
+  if (CRIME_FILTER_UI.windowPills?.length) {
+    const activeWindow = months ? (months - Math.min(CRIME_FILTER_STATE.monthStartIndex || 0, months)) : 0;
+    CRIME_FILTER_UI.windowPills.forEach((pill) => {
+      const requested = Number(pill.dataset.monthWindow || 0);
+      const shouldHighlight = requested === 0 ? (CRIME_FILTER_STATE.monthStartIndex === 0) : (requested === activeWindow);
+      pill.classList.toggle("active", shouldHighlight && months > 0);
+    });
+  }
+}
+
+function updateCrimeSummaryUI(summary = null, cells = 0) {
+  const incidentsText = summary ? formatCrimeNumber(summary.incidents || 0) : "--";
+  const stopsText = summary ? formatCrimeNumber(summary.stops || 0) : "--";
+  const outcomesText = summary ? formatCrimeNumber(summary.outcomes || 0) : "--";
+  const cellsText = formatCrimeNumber(cells || 0);
+  if (CRIME_FILTER_UI.summaryIncidents) CRIME_FILTER_UI.summaryIncidents.textContent = incidentsText;
+  if (CRIME_FILTER_UI.summaryStops) CRIME_FILTER_UI.summaryStops.textContent = stopsText;
+  if (CRIME_FILTER_UI.summaryOutcomes) CRIME_FILTER_UI.summaryOutcomes.textContent = outcomesText;
+  if (CRIME_FILTER_UI.summaryCells) CRIME_FILTER_UI.summaryCells.textContent = cellsText;
+}
+
+function summarizeFeatureForActiveRange(feature, monthStart) {
+  const props = feature?.properties || {};
+  const stats = {
+    incidents: 0,
+    stops: 0,
+    outcomes: 0,
+    timeline: [],
+    label: describeCrimeMonthRange()
+  };
+  const timeline = props.timeline;
+  const includeAll = !monthStart;
+  if (timeline) {
+    if (!feature.__timelineEntries) {
+      feature.__timelineEntries = Object.entries(timeline).sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    const entries = feature.__timelineEntries;
+    const filtered = [];
+    for (const [month, bucket] of entries) {
+      if (!includeAll && month < monthStart) continue;
+      const crime = Number(bucket?.crime || 0);
+      const stop = Number(bucket?.stop || 0);
+      const outcome = Number(bucket?.outcome || 0);
+      const total = crime + stop + outcome;
+      if (!total) continue;
+      stats.incidents += crime;
+      stats.stops += stop;
+      stats.outcomes += outcome;
+      filtered.push({ month, crime, stop, outcome });
+    }
+    stats.timeline = filtered.length ? filtered : entries.map(([month, bucket]) => ({
+      month,
+      crime: Number(bucket?.crime || 0),
+      stop: Number(bucket?.stop || 0),
+      outcome: Number(bucket?.outcome || 0)
+    }));
+  } else if (includeAll) {
+    stats.incidents = Number(props.count || 0);
+    stats.stops = Number(props.stop_search_total || 0);
+    stats.outcomes = Number(props.outcome_total || 0);
+  }
+  stats.hasActivity = (stats.incidents + stats.stops + stats.outcomes) > 0;
+  return stats;
+}
+
+function getCrimeFeatureLatLng(feature) {
+  const coords = feature?.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const [lon, lat] = coords;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  return [lat, lon];
+}
+
+function initCrimeInspectorUI() {
+  if (CRIME_INSPECTOR_UI.container) return;
+  CRIME_INSPECTOR_UI.container = document.getElementById("crime-inspector");
+  if (!CRIME_INSPECTOR_UI.container) return;
+  CRIME_INSPECTOR_UI.empty = document.getElementById("crime-inspector-empty");
+  CRIME_INSPECTOR_UI.body = document.getElementById("crime-inspector-body");
+  CRIME_INSPECTOR_UI.title = document.getElementById("crime-inspector-title");
+  CRIME_INSPECTOR_UI.subtitle = document.getElementById("crime-inspector-subtitle");
+  CRIME_INSPECTOR_UI.range = document.getElementById("crime-inspector-range");
+  CRIME_INSPECTOR_UI.incidents = document.getElementById("crime-inspector-incidents");
+  CRIME_INSPECTOR_UI.stops = document.getElementById("crime-inspector-stops");
+  CRIME_INSPECTOR_UI.outcomes = document.getElementById("crime-inspector-outcomes");
+  CRIME_INSPECTOR_UI.timeline = document.getElementById("crime-inspector-timeline");
+  CRIME_INSPECTOR_UI.incidentList = document.getElementById("crime-incident-list");
+  CRIME_INSPECTOR_UI.incidentEmpty = document.getElementById("crime-incident-empty");
+  CRIME_INSPECTOR_UI.zoomBtn = document.getElementById("crime-inspector-zoom");
+  CRIME_INSPECTOR_UI.clearBtn = document.getElementById("crime-inspector-clear");
+  CRIME_INSPECTOR_UI.clearPinsBtn = document.getElementById("crime-incident-clear-pins");
+
+  CRIME_INSPECTOR_UI.zoomBtn?.addEventListener("click", () => {
+    if (!CRIME_INSPECTOR_STATE.feature) return;
+    const latLng = getCrimeFeatureLatLng(CRIME_INSPECTOR_STATE.feature);
+    if (latLng) {
+      map.flyTo(latLng, Math.max(map.getZoom(), 14), { duration: 0.7 });
+    }
+  });
+  CRIME_INSPECTOR_UI.clearBtn?.addEventListener("click", () => {
+    clearCrimeInspector();
+  });
+  CRIME_INSPECTOR_UI.clearPinsBtn?.addEventListener("click", () => {
+    clearCrimeIncidentHighlights();
+  });
+  CRIME_INSPECTOR_UI.incidentList?.addEventListener("click", (event) => {
+    const target = event.target.closest("button[data-incident-index]");
+    if (!target) return;
+    const idx = Number(target.dataset.incidentIndex);
+    const samples = Array.isArray(CRIME_INSPECTOR_STATE.feature?.properties?.incident_samples)
+      ? CRIME_INSPECTOR_STATE.feature.properties.incident_samples
+      : [];
+    const sample = samples[idx];
+    if (sample) {
+      highlightCrimeIncident(sample);
+    }
+  });
+}
+
+function focusCrimeInspector(feature, marker, stats) {
+  if (!feature) {
+    clearCrimeInspector();
+    return;
+  }
+  CRIME_INSPECTOR_STATE.feature = feature;
+  CRIME_INSPECTOR_STATE.marker = marker || null;
+  CRIME_INSPECTOR_STATE.stats = stats || summarizeFeatureForActiveRange(feature, getActiveMonthStart());
+  clearCrimeIncidentHighlights();
+  renderCrimeInspector();
+}
+
+function renderCrimeInspector() {
+  if (!CRIME_INSPECTOR_UI.container || !CRIME_INSPECTOR_STATE.feature) return;
+  const props = CRIME_INSPECTOR_STATE.feature.properties || {};
+  const stats = CRIME_INSPECTOR_STATE.stats || summarizeFeatureForActiveRange(CRIME_INSPECTOR_STATE.feature, getActiveMonthStart());
+  const crimeType = props.dominant_type || "Crime Hotspot";
+  const forces = normalizeCrimeFeatureForces(CRIME_INSPECTOR_STATE.feature);
+  const mainForce = forces[0] || props.reported_by || "Unknown Force";
+  if (CRIME_INSPECTOR_UI.title) CRIME_INSPECTOR_UI.title.textContent = crimeType;
+  if (CRIME_INSPECTOR_UI.subtitle) {
+    const extra = `${formatCrimeNumber(stats.incidents)} incidents · ${formatCrimeNumber(stats.stops)} stop/search`;
+    CRIME_INSPECTOR_UI.subtitle.textContent = `${mainForce} · ${extra}`;
+  }
+  if (CRIME_INSPECTOR_UI.range) CRIME_INSPECTOR_UI.range.textContent = stats.label || describeCrimeMonthRange();
+  if (CRIME_INSPECTOR_UI.incidents) CRIME_INSPECTOR_UI.incidents.textContent = formatCrimeNumber(stats.incidents);
+  if (CRIME_INSPECTOR_UI.stops) CRIME_INSPECTOR_UI.stops.textContent = formatCrimeNumber(stats.stops);
+  if (CRIME_INSPECTOR_UI.outcomes) CRIME_INSPECTOR_UI.outcomes.textContent = formatCrimeNumber(stats.outcomes);
+  renderCrimeInspectorTimeline(stats.timeline);
+  const samples = Array.isArray(props.incident_samples) ? props.incident_samples : [];
+  renderCrimeIncidentList(samples);
+  CRIME_INSPECTOR_UI.body?.classList.remove("hidden");
+  CRIME_INSPECTOR_UI.empty?.classList.add("hidden");
+}
+
+function renderCrimeInspectorTimeline(series = []) {
+  const container = CRIME_INSPECTOR_UI.timeline;
+  if (!container) return;
+  if (!Array.isArray(series) || !series.length) {
+    container.textContent = "No timeline data";
+    return;
+  }
+  const trimmed = series.slice(-12);
+  const maxValue = Math.max(...trimmed.map((e) => (e.crime || 0) + (e.stop || 0) + (e.outcome || 0)), 1);
+  container.innerHTML = trimmed.map((entry) => {
+    const total = (entry.crime || 0) + (entry.stop || 0) + (entry.outcome || 0);
+    const height = Math.max(6, Math.round((total / maxValue) * 100));
+    const label = formatMonthLabel(entry.month || "");
+    return `<div class="crime-inspector-timeline-bar" style="height:${height}%"><span>${escapeHtml(label.split(" ")[0])}</span></div>`;
+  }).join("");
+}
+
+function renderCrimePopupTimeline(series = []) {
+  if (!Array.isArray(series) || !series.length) return "";
+  const trimmed = series.slice(-6);
+  const maxValue = Math.max(...trimmed.map((entry) => (entry.crime || 0) + (entry.stop || 0) + (entry.outcome || 0)), 1);
+  const bars = trimmed.map((entry) => {
+    const total = (entry.crime || 0) + (entry.stop || 0) + (entry.outcome || 0);
+    const height = Math.max(6, Math.round((total / maxValue) * 100));
+    return `<div class="crime-popup-timeline-bar" style="height:${height}%"></div>`;
+  }).join("");
+  return `<div class="crime-popup-timeline">${bars}</div>`;
+}
+
+function renderCrimeIncidentList(samples) {
+  const list = CRIME_INSPECTOR_UI.incidentList;
+  if (!list) return;
+  list.innerHTML = "";
+  if (!samples?.length) {
+    if (CRIME_INSPECTOR_UI.incidentEmpty) {
+      CRIME_INSPECTOR_UI.incidentEmpty.classList.remove("hidden");
+      list.appendChild(CRIME_INSPECTOR_UI.incidentEmpty);
+    }
+    return;
+  }
+  if (CRIME_INSPECTOR_UI.incidentEmpty) {
+    CRIME_INSPECTOR_UI.incidentEmpty.classList.add("hidden");
+  }
+  samples.forEach((sample, idx) => {
+    const card = document.createElement("div");
+    card.className = "crime-incident-card";
+    const monthLabel = sample.month ? formatMonthLabel(sample.month) : "Date N/A";
+    const forceLabel = sample.force ? escapeHtml(sample.force) : "Force unknown";
+    const locationLabel = sample.location ? escapeHtml(sample.location) : "Exact location withheld";
+    card.innerHTML = `
+      <div class="crime-incident-type">${escapeHtml(sample.type || "Incident")}</div>
+      <div class="crime-incident-meta">
+        <span>${escapeHtml(monthLabel)}</span>
+        <span>${forceLabel}</span>
+      </div>
+      <div class="crime-incident-location">${locationLabel}</div>
+      <div class="crime-incident-actions">
+        <button class="btn-secondary btn-sm" type="button" data-incident-index="${idx}">Locate on map</button>
+      </div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+function highlightCrimeIncident(sample) {
+  if (!CRIME_INCIDENT_LAYER || !sample) return;
+  const lat = Number(sample.lat);
+  const lon = Number(sample.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    showToast?.("Exact incident location unavailable", "info");
+    return;
+  }
+  const marker = L.circleMarker([lat, lon], {
+    radius: 8,
+    color: "#38bdf8",
+    weight: 2,
+    fillColor: "#0ea5e9",
+    fillOpacity: 0.75
+  });
+  const lines = [
+    `<strong>${escapeHtml(sample.type || "Incident")}</strong>`,
+    sample.month ? `<span class="popup-label">${escapeHtml(formatMonthLabel(sample.month))}</span>` : "",
+    sample.location ? escapeHtml(sample.location) : "Exact location withheld"
+  ].filter(Boolean);
+  marker.bindPopup(lines.join("<br>"));
+  CRIME_INCIDENT_LAYER.addLayer(marker);
+  marker.openPopup();
+  map.flyTo([lat, lon], Math.max(map.getZoom(), 15), { duration: 0.7 });
+}
+
+function clearCrimeIncidentHighlights() {
+  CRIME_INCIDENT_LAYER?.clearLayers();
+}
+
+function clearCrimeInspector() {
+  CRIME_INSPECTOR_STATE.feature = null;
+  CRIME_INSPECTOR_STATE.marker = null;
+  CRIME_INSPECTOR_STATE.stats = null;
+  if (!CRIME_INSPECTOR_UI.container) return;
+  CRIME_INSPECTOR_UI.body?.classList.add("hidden");
+  if (CRIME_INSPECTOR_UI.incidentList && CRIME_INSPECTOR_UI.incidentEmpty) {
+    CRIME_INSPECTOR_UI.incidentList.innerHTML = "";
+    CRIME_INSPECTOR_UI.incidentEmpty.classList.remove("hidden");
+    CRIME_INSPECTOR_UI.incidentList.appendChild(CRIME_INSPECTOR_UI.incidentEmpty);
+  }
+  CRIME_INSPECTOR_UI.empty?.classList.remove("hidden");
+  clearCrimeIncidentHighlights();
+}
+
+function buildCrimePopupHtml(props = {}, forces = [], crimeType = "Crime Hotspot", stats = null) {
+  const incidentCount = Number((stats && stats.incidents != null) ? stats.incidents : (props.count || 0));
+  const mainForce = forces[0] || props.reported_by || "Unknown Force";
+  const extraForces = forces.slice(1);
+  const stopTotal = Number((stats && stats.stops != null) ? stats.stops : (props.stop_search_total || 0));
+  const outcomeTotal = Number((stats && stats.outcomes != null) ? stats.outcomes : (props.outcome_total || 0));
+  const lines = [
+    `<strong>${escapeHtml(crimeType)}</strong><br>`,
+    `<span class="popup-label">Primary Force</span> ${escapeHtml(mainForce)}<br>`,
+    `<span class="popup-label">Incidents</span> ${formatCrimeNumber(incidentCount)}`
+  ];
+  if (props.crime_outcome_top) {
+    lines.push(`<br><span class="popup-label">Top Outcome</span> ${escapeHtml(props.crime_outcome_top)}`);
+  }
+  if (extraForces.length) {
+    lines.push(`<br><span class="popup-label">Other Forces</span> ${escapeHtml(extraForces.slice(0, 2).join(", "))}`);
+  }
+  if (stopTotal) {
+    lines.push(`<br><span class="popup-label">Stop & Search</span> ${formatCrimeNumber(stopTotal)} total`);
+    if (props.stop_search_top_object) {
+      lines.push(`<br><span class="popup-label">Top Object</span> ${escapeHtml(props.stop_search_top_object)}`);
+    }
+    if (props.stop_search_top_outcome) {
+      lines.push(`<br><span class="popup-label">Top Stop Outcome</span> ${escapeHtml(props.stop_search_top_outcome)}`);
+    }
+    if (props.stop_search_top_ethnicity) {
+      lines.push(`<br><span class="popup-label">Officer/Self Ethnicity</span> ${escapeHtml(props.stop_search_top_ethnicity)}`);
+    }
+  }
+  if (outcomeTotal) {
+    lines.push(`<br><span class="popup-label">Recorded Outcomes</span> ${formatCrimeNumber(outcomeTotal)}`);
+    if (props.outcome_top) {
+      lines.push(`<br><span class="popup-label">Prevailing Outcome</span> ${escapeHtml(props.outcome_top)}`);
+    }
+  }
+  if (stats) {
+    lines.push(`<br><span class="popup-label">Window</span> ${escapeHtml(stats.label || describeCrimeMonthRange())}`);
+    if (stats.timeline?.length) {
+      lines.push(renderCrimePopupTimeline(stats.timeline));
+    }
+  }
+  const samples = Array.isArray(props.incident_samples) ? props.incident_samples : [];
+  if (samples.length) {
+    const sample = samples[0];
+    const sampleParts = [
+      sample.type ? escapeHtml(sample.type) : null,
+      sample.month ? formatMonthLabel(sample.month) : null,
+      sample.location ? sample.location : null
+    ].filter(Boolean);
+    if (sampleParts.length) {
+      lines.push(`<br><span class="popup-label">Sample Incident</span> ${escapeHtml(sampleParts.join(" · "))}`);
+    }
+  }
+  return lines.join("");
+}
+
+function createCrimeMarker(feature, forces, crimeType, stats = null) {
+  const coords = feature?.geometry?.coordinates;
+  if (!Array.isArray(coords) || coords.length < 2) return null;
+  const [lon, lat] = coords;
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  const props = feature.properties || {};
+  const incidentCount = Number((stats && stats.incidents != null) ? stats.incidents : (props.count || 0));
+  const stopTotal = Number((stats && stats.stops != null) ? stats.stops : (props.stop_search_total || 0));
+  const radius = Math.min(18, 4 + Math.sqrt(Math.max(incidentCount, 1)) * 0.9 + Math.min(stopTotal, 200) * 0.04);
+  const color = stopTotal > 0 ? "#f97316" : "#ef4444";
+  const marker = L.circleMarker([lat, lon], {
+    radius,
+    color,
+    weight: 1.2,
+    fillColor: color,
+    fillOpacity: stopTotal > 0 ? 0.7 : 0.55
+  });
+  marker.bindPopup(buildCrimePopupHtml(props, forces, crimeType, stats));
+  return marker;
+}
+
+function renderCrimeLayerFiltered() {
+  if (!layers.crime) return;
+
+  layers.crime.clearLayers();
+
+  if (!CRIME_DATA || !CRIME_DATA.length) {
+    CRIME_LAST_RENDER_FILTERED = 0;
+    CRIME_LAST_RENDER_TOTAL = Array.isArray(CRIME_DATA) ? CRIME_DATA.length : 0;
+    updateCrimeFilterStatus({ filtered: 0, total: CRIME_LAST_RENDER_TOTAL });
+    updateCrimeSummaryUI(null, 0);
+    clearCrimeInspector();
+    return;
+  }
+
+  const total = CRIME_DATA.length;
+  const forceFilters = CRIME_FILTER_STATE.forces;
+  const typeFilters = CRIME_FILTER_STATE.types;
+  const monthStart = getActiveMonthStart();
+  const summary = { incidents: 0, stops: 0, outcomes: 0 };
+  let rendered = 0;
+  let selectedVisible = false;
+
+  CRIME_DATA.forEach((feature) => {
+    const forces = normalizeCrimeFeatureForces(feature);
+    const crimeType = feature.properties?.dominant_type || "Crime Hotspot";
+
+    if (forceFilters.size && !forces.some((force) => forceFilters.has(force))) return;
+    if (typeFilters.size && !typeFilters.has(crimeType)) return;
+
+    const stats = summarizeFeatureForActiveRange(feature, monthStart);
+    if (!stats.hasActivity) return;
+
+    const marker = createCrimeMarker(feature, forces, crimeType, stats);
+    if (!marker) return;
+    marker.on("click", () => focusCrimeInspector(feature, marker, stats));
+    layers.crime.addLayer(marker);
+    rendered++;
+    summary.incidents += stats.incidents;
+    summary.stops += stats.stops;
+    summary.outcomes += stats.outcomes;
+
+    if (CRIME_INSPECTOR_STATE.feature === feature) {
+      selectedVisible = true;
+      CRIME_INSPECTOR_STATE.marker = marker;
+      CRIME_INSPECTOR_STATE.stats = stats;
+    }
+  });
+
+  updateCrimeSummaryUI(rendered ? summary : null, rendered);
+  if (CRIME_INSPECTOR_STATE.feature) {
+    if (selectedVisible) {
+      renderCrimeInspector();
+    } else {
+      clearCrimeInspector();
+    }
+  }
+
+  CRIME_LAST_RENDER_FILTERED = rendered;
+  CRIME_LAST_RENDER_TOTAL = total;
+  updateCrimeFilterStatus({ filtered: rendered, total });
+  console.log(`[Crime] Rendered ${rendered}/${total} grid cells`);
+}
+
+async function ensureCrimeLoaded() {
+
+  if (OVERLAY_LOAD_STATE.crimeLoaded)
+    return true;
+
+  if (OVERLAY_LOAD_STATE.crimeLoading)
+    return OVERLAY_LOAD_STATE.crimeLoading;
+
+  OVERLAY_LOAD_STATE.crimeLoading =
+    fetch("data/Processed/crime_grid.geojson")
+
+      .then(r => {
+
+        if (!r.ok)
+          throw new Error("Crime file not found");
+
+        return r.json();
+
+      })
+
+      .then(data => {
+
+        CRIME_DATA = data.features || [];
+        const metaMonths = Array.isArray(data?.meta?.months) ? data.meta.months.slice().sort() : [];
+        CRIME_MONTHS = metaMonths;
+        if (CRIME_MONTHS.length) {
+          setCrimeMonthWindow(Math.min(6, CRIME_MONTHS.length), { silent: true, asDefault: true });
+        } else {
+          CRIME_FILTER_STATE.monthStartIndex = 0;
+          CRIME_DEFAULT_MONTH_START = 0;
+          updateCrimeTimelineControls();
+        }
+
+        CRIME_FORCE_MAP.clear();
+        CRIME_TYPES.clear();
+        CRIME_TYPE_STATS.clear();
+
+        CRIME_DATA.forEach(feature => {
+
+          const props = feature.properties || {};
+          const type = props.dominant_type || "Unknown";
+          const incidents = Number(props.count || 0);
+          const stopTotal = Number(props.stop_search_total || 0);
+          const forces = normalizeCrimeFeatureForces(feature);
+
+          forces.forEach(forceName => {
+            const stats = CRIME_FORCE_MAP.get(forceName) || { crimes: 0, stops: 0, cells: 0 };
+            stats.crimes += incidents;
+            stats.stops += stopTotal;
+            stats.cells += 1;
+            CRIME_FORCE_MAP.set(forceName, stats);
+          });
+
+          CRIME_TYPES.add(type);
+          const typeStats = CRIME_TYPE_STATS.get(type) || { crimes: 0, cells: 0 };
+          typeStats.crimes += incidents;
+          typeStats.cells += 1;
+          CRIME_TYPE_STATS.set(type, typeStats);
+
+        });
+
+        populateCrimeFilters();
+        renderCrimeLayerFiltered();
+
+        OVERLAY_LOAD_STATE.crimeLoaded = true;
+
+        console.log("Crime loaded:", CRIME_DATA.length);
+
+        return true;
+
+      })
+
+      .catch(err => {
+
+        console.error("Crime load error:", err);
+
+        setStatus?.("Crime data unavailable");
+
+        return false;
+
+      })
+
+      .finally(() => {
+
+        OVERLAY_LOAD_STATE.crimeLoading = null;
+
+      });
+
+  return OVERLAY_LOAD_STATE.crimeLoading;
+
+}
+
+let ACTIVE_FORCE = null;
+
+function setActiveForce(forceName, opts = {}) {
+  const next = (forceName && String(forceName).trim()) || null;
+  const changed = next !== ACTIVE_FORCE;
+  ACTIVE_FORCE = next;
+  if (changed && ACTIVE_FORCE && !opts.silent) {
+    setStatus?.(`Selected ${ACTIVE_FORCE} police force`);
+  }
+  updateCrimeFilterStatus();
+}
+
+
 
 function loadSubset(file) {
   if (!file || typeof file !== "string") return Promise.resolve([]);
@@ -345,6 +1186,8 @@ const map = L.map("map", { zoomControl: false }).setView(
 );
 window._map = map;
 
+CRIME_INCIDENT_LAYER = L.layerGroup();
+
 // Dedicated panes keep routes clickable but below station markers.
 map.createPane("tflRoutesPane");
 map.getPane("tflRoutesPane").style.zIndex = 430;
@@ -547,6 +1390,7 @@ const layers = {
   seaports:        L.featureGroup(),
   underground:     L.featureGroup(),
   national_rail:   L.featureGroup(),
+
   service_stations: L.markerClusterGroup({
     chunkedLoading: true,
     maxClusterRadius: 42,
@@ -554,9 +1398,46 @@ const layers = {
     spiderfyOnMaxZoom: true,
     disableClusteringAtZoom: 12
   }),
+  ships: L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 42,
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true,
+    disableClusteringAtZoom: 12
+  }),
+
+  // ADD THIS BLOCK
+  cellTowers: L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 42,
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true,
+    disableClusteringAtZoom: 12
+  }),
+  crime: L.markerClusterGroup({
+    chunkedLoading: true,
+    maxClusterRadius: 42,
+    showCoverageOnHover: false,
+    spiderfyOnMaxZoom: true
+  }),
+
   flights:         L.featureGroup(),
   bikes:           L.featureGroup()
 };
+
+
+const LAYER_WARM_SET = window.__CRLayerWarmSet || new Set();
+window.__CRLayerWarmSet = LAYER_WARM_SET;
+
+function markLayerDatasetWarm(layerId) {
+  const id = String(layerId || "").trim();
+  if (!id) return;
+  if (!LAYER_WARM_SET.has(id)) {
+    LAYER_WARM_SET.add(id);
+  }
+  updateLayerSummaryCards();
+}
+
 
 // Track connections and entity data
 window._mapConnections = [];
@@ -3127,6 +4008,27 @@ function buildVehiclePopupMediaHtml(entity = {}) {
 }
 
 // Update dashboard counters
+function updateLayerSummaryCards() {
+  const activeEl = document.getElementById("layer-summary-active");
+  if (activeEl) activeEl.textContent = String(document.querySelectorAll(".layer-cb:checked").length);
+
+  const warmedEl = document.getElementById("layer-summary-warmed");
+  if (warmedEl) warmedEl.textContent = String(LAYER_WARM_SET.size);
+
+  const prefetchChip = document.getElementById("layer-summary-prefetch");
+  const prefetchDetail = document.getElementById("layer-summary-prefetch-detail");
+  if (prefetchChip) {
+    let label = "AUTO";
+    let detail = "Adaptive idle warming";
+    if (window.CRPrefetch) {
+      label = window.CRPrefetch.enabled ? "ON" : "OFF";
+      detail = window.CRPrefetch.enabled ? "Idle warming active" : "Prefetch paused";
+    }
+    prefetchChip.textContent = label;
+    if (prefetchDetail) prefetchDetail.textContent = detail;
+  }
+}
+
 function updateDashboardCounts() {
   const entityCount = document.getElementById('entity_count');
   const connectionCount = document.getElementById('connection_count');
@@ -3143,6 +4045,8 @@ function updateDashboardCounts() {
   if (cpEntitiesChip) cpEntitiesChip.textContent = String(totalEntities);
   if (cpLinksChip) cpLinksChip.textContent = String(totalConnections);
   if (cpActiveLayersChip) cpActiveLayersChip.textContent = String(activeLayerCount);
+
+  updateLayerSummaryCards();
 
   // Sync KPI bar
   if (window.CRDashboard) window.CRDashboard.updateKPIs();
@@ -3761,7 +4665,19 @@ function clearImportedEntities() {
 // â”€â”€ Load overlay data â”€â”€
 
 // Police force boundaries
-const OVERLAY_LOAD_STATE = {
+const OVERLAY_STATE_LAYER_MAP = {
+  areasLoaded: ["areas"],
+  airportsLoaded: ["airports_uk", "airports_global"],
+  seaportsLoaded: ["seaports"],
+  serviceStationsLoaded: ["service_stations"],
+  undergroundLoaded: ["underground"],
+  nationalRailLoaded: ["national_rail"],
+  cellTowersLoaded: ["cellTowers"],
+  shipsLoaded: ["ships"],
+  crimeLoaded: ["crime"]
+};
+
+const __OVERLAY_LOAD_STATE = {
   areasLoaded: false,
   areasLoading: null,
   airportsLoaded: false,
@@ -3773,8 +4689,381 @@ const OVERLAY_LOAD_STATE = {
   undergroundLoaded: false,
   undergroundLoading: null,
   nationalRailLoaded: false,
-  nationalRailLoading: null
+  nationalRailLoading: null,
+  cellTowersLoaded: false,
+  cellTowersLoading: null,
+  shipsLoaded: false,
+  shipsLoading: null,
+  crimeLoaded: false,
+  crimeLoading: null
 };
+
+const OVERLAY_LOAD_STATE = new Proxy(__OVERLAY_LOAD_STATE, {
+  set(target, prop, value) {
+    target[prop] = value;
+    if (value && OVERLAY_STATE_LAYER_MAP[prop]) {
+      const ids = Array.isArray(OVERLAY_STATE_LAYER_MAP[prop])
+        ? OVERLAY_STATE_LAYER_MAP[prop]
+        : [OVERLAY_STATE_LAYER_MAP[prop]];
+      ids.forEach((id) => markLayerDatasetWarm(id));
+    }
+    if (String(prop || "").endsWith("Loaded")) {
+      updateLayerSummaryCards();
+    }
+    return true;
+  },
+  get(target, prop) {
+    return target[prop];
+  }
+});
+// â”€â”€ Ships (AISStream Live) Loader â”€â”€
+
+async function ensureShipsLoaded() {
+
+  if (OVERLAY_LOAD_STATE.shipsLoaded)
+    return true;
+
+  if (OVERLAY_LOAD_STATE.shipsLoading)
+    return OVERLAY_LOAD_STATE.shipsLoading;
+
+  OVERLAY_LOAD_STATE.shipsLoading = fetch("data/live/ships_live.json")
+
+    .then(r => {
+
+      if (!r.ok)
+        throw new Error("Ships file not found");
+
+      return r.json();
+
+    })
+
+    .then(ships => {
+
+      layers.ships.clearLayers();
+
+      let count = 0;
+
+      ships.forEach(ship => {
+
+        if (!ship.lat || !ship.lon)
+          return;
+
+        const marker = L.circleMarker(
+          [ship.lat, ship.lon],
+          {
+            radius: 6,
+            color: "#06b6d4",
+            weight: 2,
+            fillColor: "#06b6d4",
+            fillOpacity: 0.7
+          }
+        );
+
+        marker.bindPopup(
+
+          `<strong>Vessel</strong><br>` +
+          `<span class="popup-label">MMSI</span> ${escapeHtml(String(ship.mmsi))}<br>` +
+          `<span class="popup-label">Speed</span> ${escapeHtml(String(ship.speed || 0))} knots<br>` +
+          `<span class="popup-label">Heading</span> ${escapeHtml(String(ship.heading || 0))}°`
+
+        );
+
+        layers.ships.addLayer(marker);
+
+        count++;
+
+      });
+
+      console.log(`Ships loaded: ${count}`);
+
+      OVERLAY_LOAD_STATE.shipsLoaded = true;
+
+      return true;
+
+    })
+
+    .catch(e => {
+
+      console.warn("Ships load failed:", e);
+
+      setStatus?.("Ship data unavailable");
+
+      return false;
+
+    })
+
+    .finally(() => {
+
+      OVERLAY_LOAD_STATE.shipsLoading = null;
+
+    });
+
+  return OVERLAY_LOAD_STATE.shipsLoading;
+
+}
+
+// â”€â”€ Cell Tower Overlay: Complete Implementation â”€â”€
+
+// Ensure the layer exists (only creates once)
+if (!layers.cellTowers) {
+
+  layers.cellTowers = L.markerClusterGroup({
+
+    iconCreateFunction: createEntityClusterIcon,
+
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    spiderfyOnMaxZoom: true
+
+  });
+
+}
+
+
+// Register with layer control if not already present
+if (typeof overlayMaps !== "undefined" && !overlayMaps["Cell Towers"]) {
+
+  overlayMaps["Cell Towers"] = layers.cellTowers;
+
+}
+
+
+// Lazy loader function
+async function ensureCellTowersLoaded() {
+
+  if (OVERLAY_LOAD_STATE.cellTowersLoaded) return true;
+
+  if (OVERLAY_LOAD_STATE.cellTowersLoading) {
+    return OVERLAY_LOAD_STATE.cellTowersLoading;
+  }
+
+  OVERLAY_LOAD_STATE.cellTowersLoading = fetch("data/infastructure/cell_towers_uk.geojson")
+
+    .then((response) => {
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      return response.json();
+
+    })
+
+    .then((geojson) => {
+
+      if (!geojson || !Array.isArray(geojson.features)) {
+        throw new Error("Invalid GeoJSON");
+      }
+
+      let count = 0;
+
+      geojson.features.forEach((feature) => {
+
+        try {
+
+          const coords = feature?.geometry?.coordinates;
+
+          if (!coords || coords.length < 2) return;
+
+          const lon = coords[0];
+          const lat = coords[1];
+
+          if (
+            typeof lat !== "number" ||
+            typeof lon !== "number" ||
+            lat === 0 ||
+            lon === 0
+          ) return;
+
+          const props = feature.properties || {};
+
+          const radio = String(props.radio || "Unknown");
+          const mcc = String(props.mcc || "");
+          const mnc = String(props.mnc || "");
+          const lac = String(props.lac || "");
+          const cellid = String(props.cellid || "");
+
+          // Colour by radio type
+          let color = "#22c55e";
+
+          switch (radio) {
+
+            case "LTE":
+              color = "#3b82f6";
+              break;
+
+            case "GSM":
+              color = "#f59e0b";
+              break;
+
+            case "UMTS":
+              color = "#a855f7";
+              break;
+
+            case "NR":
+            case "5G":
+              color = "#ef4444";
+              break;
+
+          }
+
+          const marker = L.circleMarker([lat, lon], {
+
+            radius: 3,
+            color: color,
+            weight: 1,
+            fillColor: color,
+            fillOpacity: 0.7
+
+          });
+
+          marker.bindPopup(
+
+            `<strong>Cell Tower</strong><br>` +
+            `<span class="popup-label">Radio</span> ${escapeHtml(radio)}<br>` +
+            (mcc ? `<span class="popup-label">MCC</span> ${escapeHtml(mcc)}<br>` : "") +
+            (mnc ? `<span class="popup-label">MNC</span> ${escapeHtml(mnc)}<br>` : "") +
+            (lac ? `<span class="popup-label">LAC</span> ${escapeHtml(lac)}<br>` : "") +
+            (cellid ? `<span class="popup-label">Cell ID</span> ${escapeHtml(cellid)}` : "")
+
+          );
+
+          layers.cellTowers.addLayer(marker);
+
+          count++;
+
+        }
+        catch (err) {
+
+          // Ignore malformed records
+
+        }
+
+      });
+
+      OVERLAY_LOAD_STATE.cellTowersLoaded = true;
+
+      console.log(`Cell towers loaded: ${count}`);
+
+      return true;
+
+    })
+
+    .catch((error) => {
+
+      console.warn("Cell tower load failed:", error);
+
+      if (typeof setStatus === "function") {
+        setStatus("Cell tower data unavailable");
+      }
+
+      return false;
+
+    })
+
+    .finally(() => {
+
+      OVERLAY_LOAD_STATE.cellTowersLoading = null;
+
+    });
+
+  return OVERLAY_LOAD_STATE.cellTowersLoading;
+
+}
+async function ensureShipsLoaded() {
+
+  if (OVERLAY_LOAD_STATE.shipsLoaded)
+    return true;
+
+  if (OVERLAY_LOAD_STATE.shipsLoading)
+    return OVERLAY_LOAD_STATE.shipsLoading;
+
+  OVERLAY_LOAD_STATE.shipsLoading = fetch("data/live/ships_live.json")
+
+    .then(r => {
+
+      if (!r.ok)
+        throw new Error("Ships file not found");
+
+      return r.json();
+
+    })
+
+    .then(ships => {
+
+      layers.ships.clearLayers();
+
+      let count = 0;
+
+      ships.forEach(ship => {
+
+        if (!ship.lat || !ship.lon)
+          return;
+
+        const marker = L.circleMarker(
+          [ship.lat, ship.lon],
+          {
+            radius: 6,
+            color: "#06b6d4",
+            weight: 2,
+            fillColor: "#06b6d4",
+            fillOpacity: 0.7
+          }
+        );
+
+        marker.bindPopup(
+
+          `<strong>Vessel</strong><br>` +
+          `<span class="popup-label">MMSI</span> ${escapeHtml(String(ship.mmsi))}<br>` +
+          `<span class="popup-label">Speed</span> ${escapeHtml(String(ship.speed || 0))} knots<br>` +
+          `<span class="popup-label">Heading</span> ${escapeHtml(String(ship.heading || 0))}°`
+
+        );
+
+        layers.ships.addLayer(marker);
+
+        count++;
+
+      });
+
+      console.log(`Ships loaded: ${count}`);
+
+      OVERLAY_LOAD_STATE.shipsLoaded = true;
+
+      return true;
+
+    })
+
+    .catch(e => {
+
+      console.warn("Ships load failed:", e);
+
+      setStatus?.("Ship data unavailable");
+
+      return false;
+
+    })
+
+    .finally(() => {
+
+      OVERLAY_LOAD_STATE.shipsLoading = null;
+
+    });
+
+  return OVERLAY_LOAD_STATE.shipsLoading;
+
+}
+
+// Automatically load when overlay is enabled
+map.on("overlayadd", function(e) {
+
+  if (e.layer === layers.cellTowers) {
+
+    ensureCellTowersLoaded();
+
+  }
+
+});
 
 function resolvePoliceForceName(props = {}) {
   if (!props || typeof props !== "object") return "Unknown Police Force";
@@ -3816,6 +5105,10 @@ async function ensurePoliceAreasLoaded() {
             `<span class="popup-label">Police Force Area</span>` +
             (code ? `<br><span class="popup-label">Force Code</span> ${escapeHtml(code)}` : "")
           );
+          l.on("click", () => {
+            setActiveForce(n);
+            showToast?.(`${n} selected`, "info");
+          });
         }
       }).addTo(layers.areas);
       OVERLAY_LOAD_STATE.areasLoaded = true;
@@ -5313,6 +6606,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // i2 catalog now loads lazily when i2/entity placement UI is first used.
   initializeEntitySelector();
+  initCrimeFilterUI();
   
   // Entity placement panel handlers
   const entityCategorySelect = document.getElementById('entity-category');
@@ -5847,6 +7141,100 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
+  const layerLoadouts = {
+    transport: {
+      layersOn: ["underground", "national_rail", "service_stations", "bikes"],
+      status: "Transport Sweep preset enabled"
+    },
+    aviation: {
+      layersOn: ["airports_uk", "airports_global", "flights"],
+      status: "Aviation Watch preset enabled"
+    },
+    maritime: {
+      layersOn: ["seaports", "ships"],
+      status: "Maritime Ops preset enabled"
+    },
+    infrastructure: {
+      layersOn: ["cellTowers", "crime", "service_stations"],
+      status: "Critical Infrastructure preset enabled"
+    }
+  };
+
+  const layerPresetButtons = document.querySelectorAll(".layer-preset-btn[data-loadout]");
+  const layerResetBtn = document.getElementById("layer-reset-btn");
+
+  function setActiveLayerPreset(loadoutId) {
+    layerPresetButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.loadout === loadoutId && !!loadoutId);
+    });
+  }
+
+  function applyLayerLoadout(loadoutId) {
+    const preset = layerLoadouts[loadoutId];
+    if (!preset) return;
+    (preset.layersOff || []).forEach((layerId) => setLayerEnabled(layerId, false));
+    (preset.layersOn || []).forEach((layerId) => setLayerEnabled(layerId, true));
+    setActiveLayerPreset(loadoutId);
+    if (preset.status) setStatus(preset.status);
+    showToast(`${preset.status || "Preset applied"}`, "success", 2200);
+  }
+
+  function resetLayerCatalog() {
+    setActiveLayerPreset(null);
+    document.querySelectorAll(".layer-cb").forEach((cb) => {
+      const keepEnabled = cb.dataset.layer === "companies";
+      setLayerEnabled(cb.dataset.layer, keepEnabled);
+    });
+    setStatus("Layer catalog reset to baseline");
+    showToast("Layer catalog reset", "info", 2000);
+  }
+
+  layerPresetButtons.forEach((btn) => {
+    btn.addEventListener("click", () => applyLayerLoadout(btn.dataset.loadout));
+  });
+  layerResetBtn?.addEventListener("click", resetLayerCatalog);
+
+  const layerGroups = Array.from(document.querySelectorAll("#tab-layers details.layer-group"));
+  const layerSearchInput = document.getElementById("layer-search-input");
+  const layerSearchClearBtn = document.getElementById("layer-search-clear");
+  const layerSearchEmpty = document.getElementById("layer-search-empty");
+
+  function applyLayerSearchFilter(rawQuery = "") {
+    const query = String(rawQuery || "").trim().toLowerCase();
+    let visibleCount = 0;
+    layerGroups.forEach((group) => {
+      const rows = Array.from(group.querySelectorAll(".layer-row"));
+      let groupVisible = false;
+      rows.forEach((row) => {
+        const target = (row.dataset.layerName || row.querySelector(".layer-name")?.textContent || "").toLowerCase();
+        const match = !query || target.includes(query);
+        row.classList.toggle("layer-row-hidden", !match);
+        if (match) {
+          groupVisible = true;
+          visibleCount++;
+        }
+      });
+      group.classList.toggle("layer-group-hidden", !groupVisible);
+    });
+    if (layerSearchEmpty) layerSearchEmpty.classList.toggle("hidden", !!visibleCount || !query);
+  }
+
+  layerSearchInput?.addEventListener("input", (ev) => applyLayerSearchFilter(ev.target.value));
+  layerSearchInput?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      layerSearchInput.value = "";
+      applyLayerSearchFilter("");
+    }
+  });
+  layerSearchClearBtn?.addEventListener("click", () => {
+    if (!layerSearchInput) return;
+    layerSearchInput.value = "";
+    applyLayerSearchFilter("");
+    layerSearchInput.focus();
+  });
+  applyLayerSearchFilter("");
+
   document.addEventListener("click", (e) => {
     if (!cpMenu || !cpMenuBtn) return;
     if (cpMenu.classList.contains("hidden")) return;
@@ -5892,50 +7280,214 @@ document.addEventListener("DOMContentLoaded", async () => {
       el.classList.toggle("hidden", !enabled);
     });
   }
-  document.querySelectorAll(".layer-cb").forEach(cb => {
-    cb.addEventListener("change", async () => {
-      try {
-        const layerId = cb.dataset.layer;
-        const layer = layers[layerId];
-        if (!layer) return;
-        if (cb.checked && layerId === "areas") {
-          const ok = await ensurePoliceAreasLoaded();
-          if (!ok) { cb.checked = false; return; }
-        }
-        if (cb.checked && (layerId === "airports_uk" || layerId === "airports_global" || layerId === "flights")) {
-          await ensureAirportsLoaded();
-        }
-        if (cb.checked && layerId === "seaports") {
-          await ensureSeaportsLoaded();
-        }
-        if (cb.checked && layerId === "service_stations") {
-          const ok = await ensureServiceStationsLoaded();
-          if (!ok) { cb.checked = false; return; }
-        }
-        if (cb.checked && layerId === "underground") {
-          const ok = await ensureUndergroundLoaded();
-          if (!ok) { cb.checked = false; return; }
-        }
-        if (cb.checked && layerId === "national_rail") {
-          if (typeof window.ensureNationalRailLoaded === "function") {
-            const ok = await window.ensureNationalRailLoaded();
-            if (!ok) { cb.checked = false; return; }
-          }
-        }
-        if (cb.checked) { layer.addTo(map); }
-        else { map.removeLayer(layer); }
-        // Log layer toggle
-        if (window.CRDashboard) {
-          window.CRDashboard.logActivity(cb.checked ? "Layer enabled" : "Layer disabled", layerId, "layer");
-        }
-      } finally {
-        syncLayerToolBlocks();
-        updateDashboardCounts();
+document.querySelectorAll(".layer-cb").forEach(cb => {
+  cb.addEventListener("change", async () => {
+    try {
+      const layerId = cb.dataset.layer;
+      const layer = layers[layerId];
+      if (!layer) return;
+
+      if (cb.checked && layerId === "areas") {
+        const ok = await ensurePoliceAreasLoaded();
+        if (!ok) { cb.checked = false; return; }
       }
-    });
+      if (cb.checked && layerId === "crime") {
+        const ok = await ensureCrimeLoaded();
+        if (!ok) { cb.checked = false; return; }
+      }
+
+
+      if (cb.checked && (layerId === "airports_uk" || layerId === "airports_global" || layerId === "flights")) {
+        await ensureAirportsLoaded();
+      }
+
+      if (cb.checked && layerId === "seaports") {
+        await ensureSeaportsLoaded();
+      }
+      if (cb.checked && layerId === "ships") {
+        const ok = await ensureShipsLoaded();
+        if (!ok) { cb.checked = false; return; }
+      }
+
+      if (cb.checked && layerId === "service_stations") {
+        const ok = await ensureServiceStationsLoaded();
+        if (!ok) { cb.checked = false; return; }
+      }
+
+      if (cb.checked && layerId === "underground") {
+        const ok = await ensureUndergroundLoaded();
+        if (!ok) { cb.checked = false; return; }
+      }
+
+      if (cb.checked && layerId === "national_rail") {
+        if (typeof window.ensureNationalRailLoaded === "function") {
+          const ok = await window.ensureNationalRailLoaded();
+          if (!ok) { cb.checked = false; return; }
+        }
+      }
+
+      // ADD THIS BLOCK
+      if (cb.checked && layerId === "cellTowers") {
+        const ok = await ensureCellTowersLoaded();
+        if (!ok) { cb.checked = false; return; }
+      }
+
+      if (cb.checked) {
+        layer.addTo(map);
+      }
+      else {
+        map.removeLayer(layer);
+      }
+
+      if (layerId === "crime") {
+        if (cb.checked) {
+          CRIME_INCIDENT_LAYER?.addTo(map);
+        } else {
+          if (CRIME_INCIDENT_LAYER && map.hasLayer(CRIME_INCIDENT_LAYER)) {
+            map.removeLayer(CRIME_INCIDENT_LAYER);
+          }
+          clearCrimeInspector();
+        }
+      }
+
+      // Log layer toggle
+      if (window.CRDashboard) {
+        window.CRDashboard.logActivity(
+          cb.checked ? "Layer enabled" : "Layer disabled",
+          layerId,
+          "layer"
+        );
+      }
+
+    } finally {
+      syncLayerToolBlocks();
+      updateDashboardCounts();
+    }
   });
+});
+
   syncLayerToolBlocks();
   updateDashboardCounts();
+
+  const LAYER_PREFETCH_KEY = "cr-layer-prefetch";
+  const LAYER_PREFETCH_DISABLED_VALUE = "off";
+  let layerPrefetchQueue = null;
+  let layerPrefetchRunning = false;
+  let layerPrefetchHandle = null;
+  let layerPrefetchHooksBound = false;
+
+  function shouldEnableLayerPrefetch() {
+    if (localStorage.getItem(LAYER_PREFETCH_KEY) === LAYER_PREFETCH_DISABLED_VALUE) return false;
+    const conn = navigator.connection;
+    if (conn && (conn.saveData || conn.effectiveType === "2g")) return false;
+    return true;
+  }
+
+  function buildLayerPrefetchQueue() {
+    const jobs = [];
+    const pushJob = (id, loader) => {
+      if (typeof loader !== "function") return;
+      jobs.push({ id, loader });
+    };
+    if (typeof ensureAirportsLoaded === "function") pushJob("airports", () => ensureAirportsLoaded());
+    if (typeof ensureSeaportsLoaded === "function") pushJob("seaports", () => ensureSeaportsLoaded());
+    if (typeof ensureServiceStationsLoaded === "function") pushJob("service_stations", () => ensureServiceStationsLoaded());
+    if (typeof ensureUndergroundLoaded === "function") pushJob("underground", () => ensureUndergroundLoaded());
+    if (typeof ensureCellTowersLoaded === "function") pushJob("cell_towers", () => ensureCellTowersLoaded());
+    if (typeof ensureShipsLoaded === "function") pushJob("ships", () => ensureShipsLoaded());
+    if (typeof window.ensureNationalRailLoaded === "function") {
+      pushJob("national_rail", () => window.ensureNationalRailLoaded());
+    }
+    return jobs;
+  }
+
+  function clearLayerPrefetchHandle() {
+    if (layerPrefetchHandle == null) return;
+    if (typeof window.cancelIdleCallback === "function") {
+      try { window.cancelIdleCallback(layerPrefetchHandle); }
+      catch (_) { window.clearTimeout(layerPrefetchHandle); }
+    } else {
+      window.clearTimeout(layerPrefetchHandle);
+    }
+    layerPrefetchHandle = null;
+  }
+
+  function scheduleLayerPrefetchNext(delayOverride) {
+    if (!layerPrefetchQueue || !layerPrefetchQueue.length) {
+      layerPrefetchRunning = false;
+      return;
+    }
+    clearLayerPrefetchHandle();
+    const baseDelay = document.hidden ? 6000 : 2400;
+    const delay = typeof delayOverride === "number" ? delayOverride : baseDelay;
+    if (typeof window.requestIdleCallback === "function" && !document.hidden) {
+      layerPrefetchHandle = window.requestIdleCallback(runLayerPrefetchJob, { timeout: delay });
+    } else {
+      layerPrefetchHandle = window.setTimeout(() => runLayerPrefetchJob(), delay);
+    }
+  }
+
+  function runLayerPrefetchJob(deadline) {
+    if (!layerPrefetchQueue || !layerPrefetchQueue.length) {
+      layerPrefetchRunning = false;
+      return;
+    }
+    if (deadline && !deadline.didTimeout && typeof deadline.timeRemaining === "function" && deadline.timeRemaining() < 8) {
+      scheduleLayerPrefetchNext(1000);
+      return;
+    }
+    const job = layerPrefetchQueue.shift();
+    Promise.resolve()
+      .then(() => job.loader())
+      .then(() => console.debug(`[Prefetch] Layer ${job.id} warmed`))
+      .catch((err) => console.warn(`[Prefetch] ${job.id} prefetch failed`, err))
+      .finally(() => scheduleLayerPrefetchNext());
+  }
+
+  function startLayerPrefetch(reason) {
+    if (layerPrefetchRunning) return;
+    if (!shouldEnableLayerPrefetch()) return;
+    if (!layerPrefetchQueue || !layerPrefetchQueue.length) {
+      layerPrefetchQueue = buildLayerPrefetchQueue();
+    }
+    if (!layerPrefetchQueue.length) return;
+    layerPrefetchRunning = true;
+    const initialDelay = reason === "focus" ? 1200 : 3200;
+    scheduleLayerPrefetchNext(initialDelay);
+  }
+
+  function initLayerPrefetchHooks() {
+    if (layerPrefetchHooksBound) return;
+    layerPrefetchHooksBound = true;
+    if (!window.CRPrefetch) {
+      window.CRPrefetch = {
+        enable() {
+          localStorage.removeItem(LAYER_PREFETCH_KEY);
+          layerPrefetchQueue = buildLayerPrefetchQueue();
+          layerPrefetchRunning = false;
+          startLayerPrefetch("manual");
+          updateLayerSummaryCards();
+        },
+        disable() {
+          localStorage.setItem(LAYER_PREFETCH_KEY, LAYER_PREFETCH_DISABLED_VALUE);
+          clearLayerPrefetchHandle();
+          layerPrefetchQueue = null;
+          layerPrefetchRunning = false;
+          updateLayerSummaryCards();
+        },
+        get enabled() {
+          return shouldEnableLayerPrefetch();
+        }
+      };
+    }
+    setTimeout(() => startLayerPrefetch("timeout"), 4200);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) startLayerPrefetch("visible");
+    });
+    window.addEventListener("focus", () => startLayerPrefetch("focus"), { passive: true });
+    startLayerPrefetch("initial");
+  }
+  initLayerPrefetchHooks();
 
   // ── Railway mode pills ──
   document.querySelectorAll("[data-rail-mode]").forEach(pill => {

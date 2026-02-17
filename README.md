@@ -134,6 +134,12 @@ This routes `/ch`, `/tfl`, `/signalbox`, `/postcodes`, `/osplaces`, `/api/flight
 
 Note: `js/api_base.js` includes a default hosted proxy URL fallback, so GitHub Pages works without a local Python server by default.
 
+## Performance & Offline Enhancements
+
+- **Offline-ready caching**: a new service worker (`sw.js`) now precaches the core UI shell (HTML, CSS, primary JS bundles) and replays cached `data/*.json` / `.geojson` requests when you lose connectivity. The worker registers automatically when the app runs over `http://localhost` or HTTPS. To force-refresh, open DevTools → Application → Service Workers and click *Unregister*, or run `navigator.serviceWorker.getRegistration()?.then(r => r?.unregister())` in the console.
+- **Idle layer prefetcher**: heavy overlays (airports, seaports, Underground, National Rail, service stations, cell towers, ships) are now warmed quietly via `requestIdleCallback` once the map is idle. This removes the “blank layer” pause the first time you toggle each dataset. Power users can opt out or re-enable at runtime via `window.CRPrefetch.disable()` / `window.CRPrefetch.enable()` if they are on constrained networks.
+- **Connection aware**: both systems auto-disable when the browser advertises `Save-Data` or a `2g` link, so low-bandwidth field kits are not penalised.
+
 ## Usage
 
 ### Searching Companies
