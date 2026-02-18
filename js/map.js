@@ -2369,6 +2369,7 @@ async function startI2EntityPlacement(entityTypeId) {
   const typeSelect = document.getElementById("entity-i2-type");
   const iconSelect = document.getElementById("entity-icon");
   const labelInput = document.getElementById("entity-label");
+  const placementNumberInput = document.getElementById("entity-placement-number");
   const placementAddressInput = document.getElementById("entity-placement-address");
 
   if (categorySelect) {
@@ -2390,6 +2391,7 @@ async function startI2EntityPlacement(entityTypeId) {
   ENTITY_ICON_MANUAL_OVERRIDE = false;
   autoSelectIconFromI2Fields(true);
   if (labelInput) labelInput.value = "";
+  if (placementNumberInput) placementNumberInput.value = "";
   if (placementAddressInput) placementAddressInput.value = "";
   setStatus(`Placing ${entityDef.entity_name}: set fields and submit to place on map`);
 }
@@ -7327,6 +7329,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     iconData.categoryColor = category.color;
     iconData.categoryName = category.name;
     const label = inferEntityLabel(rawLabel, i2EntityData, iconData.name);
+    const manualPlacementNumber = String(document.getElementById("entity-placement-number")?.value || "").trim();
     const manualPlacementAddress = String(document.getElementById("entity-placement-address")?.value || "").trim();
     const address = inferEntityAddress(i2EntityData) || manualPlacementAddress;
     const notes = inferEntityNotes(i2EntityData);
@@ -7339,12 +7342,18 @@ document.addEventListener("DOMContentLoaded", async () => {
     let placementLatLng = latLng;
     const postcode = getI2ValueByNames(i2EntityData, ["Post Code", "Postal Code", "Postcode"]);
     const addressString = getI2ValueByNames(i2EntityData, ["Address String", "Address"]) || manualPlacementAddress;
-    const extractedPostcode = !postcode ? extractUkPostcode(addressString) : "";
+    const i2BuildingNumber = getI2ValueByNames(i2EntityData, ["Building Number", "House Number"]);
+    const preferredNumber = i2BuildingNumber || manualPlacementNumber;
+    const hasLeadingNumber = /^\s*\d+[A-Za-z]?\b/.test(addressString || "");
+    const geocodeAddressString = preferredNumber && addressString && !hasLeadingNumber
+      ? `${preferredNumber} ${addressString}`
+      : (addressString || "");
+    const extractedPostcode = !postcode ? extractUkPostcode(geocodeAddressString) : "";
     let geoMethod = "";
-    const parsedAddress = parseAddressString(addressString || "") || null;
-    const hasSpecificAddress = !!(parsedAddress && (parsedAddress.buildingNumber || parsedAddress.streetName));
-    if (addressString) {
-      const geoAddress = await geocodeAddress(addressString, { strict: true });
+    const parsedAddress = parseAddressString(geocodeAddressString || "") || null;
+    const hasSpecificAddress = !!((preferredNumber || parsedAddress?.buildingNumber || parsedAddress?.streetName));
+    if (geocodeAddressString) {
+      const geoAddress = await geocodeAddress(geocodeAddressString, { strict: true });
       if (geoAddress && Number.isFinite(geoAddress.lat) && Number.isFinite(geoAddress.lon)) {
         placementLatLng = [geoAddress.lat, geoAddress.lon];
         geoMethod = "address";
