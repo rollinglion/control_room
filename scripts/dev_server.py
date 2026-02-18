@@ -143,6 +143,15 @@ def load_env_file():
 
 
 class Handler(SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # Dev UX: always disable browser caching for HTML/CSS/JS so UI changes are immediate.
+        path = urlsplit(getattr(self, "path", "")).path.lower()
+        if path == "/" or path.endswith(".html") or path.endswith(".css") or path.endswith(".js"):
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+        super().end_headers()
+
     def _serve_accelerated_static(self, route_path: str) -> bool:
         mapping = STATIC_ACCELERATED_FILES.get(route_path)
         if not mapping:

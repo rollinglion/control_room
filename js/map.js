@@ -7202,6 +7202,8 @@ async function runPscSearch() {
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 document.addEventListener("DOMContentLoaded", async () => {
+  // Runtime fallback so visual refresh is applied even when stale HTML template is served.
+  document.body?.classList.add("ux-revamp");
   window.__CONTROL_ROOM_ACTIVE_TAB = "search";
   setStatus("Initializing...");
   // Compatibility-only preload (non-blocking): search path is API-driven.
@@ -7231,6 +7233,16 @@ document.addEventListener("DOMContentLoaded", async () => {
   const entitySelectAllBtn = document.getElementById('entity-select-all');
   const entityExportExcelBtn = document.getElementById('entity-export-excel');
   const entityImportPanel = document.querySelector('.entity-import-panel');
+
+  // Runtime fallback: inject Number field if older index.html is loaded from cache.
+  const placementAddressInput = document.getElementById("entity-placement-address");
+  if (placementAddressInput && !document.getElementById("entity-placement-number")) {
+    const numInput = document.createElement("input");
+    numInput.type = "text";
+    numInput.id = "entity-placement-number";
+    numInput.placeholder = "House number (e.g. 1)";
+    placementAddressInput.parentNode?.insertBefore(numInput, placementAddressInput);
+  }
   
   // Category change handler
   entityCategorySelect?.addEventListener('change', async (e) => {
