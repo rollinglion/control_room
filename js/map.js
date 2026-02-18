@@ -840,6 +840,8 @@ function renderCrimeLayerFiltered() {
 async function ensureCrimeLoaded() {
   async function fetchCrimeGeoJson() {
     const urls = [
+      "data/processed/crime_grid_lite.geojson",
+      "data/Processed/crime_grid_lite.geojson",
       "data/processed/crime_grid.geojson",
       "data/Processed/crime_grid.geojson"
     ];
@@ -920,7 +922,11 @@ async function ensureCrimeLoaded() {
 
         OVERLAY_LOAD_STATE.crimeLoaded = true;
 
-        console.log("Crime loaded:", CRIME_DATA.length);
+        const isLite = !!data?.meta?.lite;
+        console.log("Crime loaded:", CRIME_DATA.length, isLite ? "(lite)" : "(full)");
+        if (isLite) {
+          setStatus?.(`Crime layer loaded (lite mode): ${CRIME_DATA.length.toLocaleString()} cells`);
+        }
 
         return true;
 

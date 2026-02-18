@@ -56,8 +56,24 @@
     }
   }
 
+  async function getStreetViewStatus(lat, lng) {
+    var key = _getApiKey();
+    if (!key) return { ok: false, status: "NO_KEY" };
+    var url = "https://maps.googleapis.com/maps/api/streetview/metadata" +
+      "?location=" + encodeURIComponent(lat + "," + lng) +
+      "&key=" + encodeURIComponent(key);
+    try {
+      var resp = await fetch(url);
+      var data = await resp.json();
+      var status = String(data?.status || "UNKNOWN");
+      return { ok: status === "OK", status: status, data: data };
+    } catch (e) {
+      return { ok: false, status: "NETWORK_ERROR" };
+    }
+  }
+
   // ── Render Street View thumbnail into container ──
-  function renderThumbnail(container, lat, lng, options) {
+  async function renderThumbnail(container, lat, lng, options) {
     if (!container) return;
     if (!isConfigured()) {
       container.innerHTML = '<div class="sv-unavailable">Street View not configured</div>';
@@ -73,6 +89,17 @@
     var url = getStaticUrl(lat, lng, { size: size, fov: options.fov, heading: options.heading, pitch: options.pitch });
     if (!url) {
       container.innerHTML = '<div class="sv-unavailable">Street View unavailable</div>';
+      return;
+    }
+
+    var meta = await getStreetViewStatus(lat, lng);
+    if (!meta.ok) {
+      var msg = "No Street View coverage";
+      if (meta.status === "NO_KEY") msg = "Street View key missing";
+      else if (meta.status === "REQUEST_DENIED") msg = "Street View request denied (API key/referrer)";
+      else if (meta.status === "OVER_QUERY_LIMIT") msg = "Street View quota exceeded";
+      else if (meta.status === "INVALID_REQUEST") msg = "Street View request invalid";
+      container.innerHTML = '<div class="sv-unavailable">' + msg + '</div>';
       return;
     }
 
@@ -119,6 +146,7 @@
     isConfigured: isConfigured,
     getStaticUrl: getStaticUrl,
     hasStreetView: hasStreetView,
+    getStreetViewStatus: getStreetViewStatus,
     renderThumbnail: renderThumbnail,
     renderInspectorView: renderInspectorView,
     getPopupThumbnailHtml: getPopupThumbnailHtml
