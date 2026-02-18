@@ -119,12 +119,19 @@
     var nextSource = payload.source;
     var nextI2 = payload.i2EntityData;
     var nextIconOverride = payload.iconOverride;
+    var nextId = payload.id;
+    var nextMarker = payload._marker;
+    var nextVisible = payload._visible;
 
     if (!ENTITY_TYPES[nextType]) {
       console.warn("[EntityStore] Unknown entity type: " + nextType + ", defaulting to location");
       nextType = "location";
     }
-    var id = generateId("ent");
+    var id = nextId || generateId("ent");
+    if (_entityIndex[id]) {
+      console.warn("[EntityStore] Duplicate entity id: " + id + ", generating new id");
+      id = generateId("ent");
+    }
     var now = Date.now();
     var entity = {
       id: id,
@@ -136,8 +143,8 @@
       i2EntityData: nextI2 || null,
       iconOverride: nextIconOverride || null,
       metadata: { createdAt: now, updatedAt: now },
-      _marker: null,
-      _visible: true
+      _marker: nextMarker || null,
+      _visible: nextVisible !== undefined ? !!nextVisible : true
     };
     _entities.push(entity);
     _entityIndex[id] = entity;
@@ -488,16 +495,24 @@
 
     // Build entity list compatible with legacy format
     window._mapEntities = _entities.map(function (e) {
+      var attrs = e.attributes || {};
       return {
         id: e.id,
         iconData: _resolveIconData(e),
         label: e.label,
-        address: e.attributes.address || e.attributes.postcode || "",
+        address: attrs.address || attrs.postcode || "",
         notes: _buildNotesFromAttributes(e),
         latLng: e.latLng,
         marker: e._marker,
         i2EntityData: e.i2EntityData || null,
-        sourceType: e.source ? e.source.method : "",
+        sourceType: attrs.sourceType || (e.source ? e.source.method : ""),
+        officerId: attrs.officerId || "",
+        officerRole: attrs.officerRole || "",
+        companyName: attrs.companyName || "",
+        companyNumber: attrs.companyNumber || "",
+        dob: attrs.dob || "",
+        nationality: attrs.nationality || "",
+        countryOfResidence: attrs.countryOfResidence || "",
         _storeRef: true   // Flag to indicate this came from EntityStore
       };
     });

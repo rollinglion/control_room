@@ -3319,6 +3319,38 @@ function registerOfficerMarkerAsEntity(marker, personData = {}) {
 
   const coords = normalizeLatLng(personData.latLng || marker.getLatLng());
   if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return null;
+  if (window.EntityStore) {
+    const entityId = window.EntityStore.addEntity({
+      type: "person",
+      label: String(personData.name || "Person"),
+      attributes: {
+        address: String(personData.address || "").trim(),
+        notes: personData.notes ? String(personData.notes) : "",
+        dob: personData.dob || "",
+        nationality: personData.nationality || "",
+        countryOfResidence: personData.countryOfResidence || "",
+        officerId: personData.officerId || "",
+        officerRole: personData.relationship || "",
+        companyName: personData.companyName ? String(personData.companyName) : "",
+        companyNumber: personData.companyNumber ? String(personData.companyNumber) : "",
+        sourceType: "officer"
+      },
+      latLng: coords,
+      i2EntityData: buildOfficerI2EntityData(personData),
+      _marker: marker,
+      _visible: true
+    });
+    marker._entityId = entityId;
+    const stored = getEntityById(entityId);
+    if (stored) {
+      marker.bindPopup(buildEntityPopup(entityId, stored));
+      bindEntityHoverTooltip(marker, stored);
+    }
+    upsertOfficerEntityIndexes(entityId, personData);
+    updateDashboardCounts();
+    return entityId;
+  }
+
   const entityId = `officer_entity_${Date.now()}_${Math.random()}`;
   const entity = {
     id: entityId,
@@ -3380,6 +3412,34 @@ function registerCompanyMarkerAsEntity(marker, companyData = {}) {
 
   const coords = normalizeLatLng(companyData.latLng || marker.getLatLng());
   if (!Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return null;
+  if (window.EntityStore) {
+    const entityId = window.EntityStore.addEntity({
+      type: "organisation",
+      label: String(companyData.name || numberKey),
+      attributes: {
+        address: String(companyData.address || "").trim(),
+        notes: companyData.status ? `Status: ${companyData.status}` : "",
+        companyNumber: numberKey,
+        companyName: String(companyData.name || numberKey),
+        status: String(companyData.status || ""),
+        sourceType: "company"
+      },
+      latLng: coords,
+      i2EntityData: buildCompanyI2EntityData(companyData),
+      _marker: marker,
+      _visible: true
+    });
+    marker._entityId = entityId;
+    bindCompanyEntityMarkerClick(marker);
+    const stored = getEntityById(entityId);
+    if (stored) {
+      marker.bindPopup(buildEntityPopup(entityId, stored));
+      bindEntityHoverTooltip(marker, stored);
+    }
+    window._companyEntityIndex[numberKey] = entityId;
+    updateDashboardCounts();
+    return entityId;
+  }
 
   const entityId = `company_entity_${numberKey}_${Date.now()}_${Math.random()}`;
   const entity = {
