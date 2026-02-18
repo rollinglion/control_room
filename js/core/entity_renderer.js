@@ -318,6 +318,10 @@
     var attrs = entity.attributes || {};
 
     var html = '<strong>' + _escapeHtml(entity.label || "Entity") + '</strong>';
+    var popupStreetViewHtml =
+      entity.latLng && window.StreetView && typeof window.StreetView.getPopupThumbnailHtml === "function"
+        ? window.StreetView.getPopupThumbnailHtml(entity.latLng[0], entity.latLng[1])
+        : "";
 
     // Type badge
     html += ' <span class="popup-tag" style="background:' + color + '">' + _escapeHtml(typeLabel) + '</span><br>';
@@ -350,6 +354,7 @@
     if (entity.latLng) {
       html += '<span class="popup-label">Lat/Lng</span> ' + entity.latLng[0].toFixed(5) + ', ' + entity.latLng[1].toFixed(5);
     }
+    if (popupStreetViewHtml) html += popupStreetViewHtml;
 
     // i2 data summary
     if (entity.i2EntityData && typeof window.formatI2EntitySummary === "function") {

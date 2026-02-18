@@ -3290,6 +3290,10 @@ function bindEntityHoverTooltip(marker, entity) {
 }
 
 function buildEntityPopup(entityId, entity) {
+  const popupStreetViewHtml =
+    entity?.latLng && window.StreetView && typeof window.StreetView.getPopupThumbnailHtml === "function"
+      ? window.StreetView.getPopupThumbnailHtml(entity.latLng[0], entity.latLng[1])
+      : "";
   if (entity?.i2EntityData) {
     entity.i2EntityData = normalizeVehicleI2EntityData(entity.i2EntityData, entity.iconData);
   }
@@ -3321,6 +3325,7 @@ function buildEntityPopup(entityId, entity) {
         <summary>See more</summary>
         ${detailRows.join("<br>")}
       </details>
+      ${popupStreetViewHtml}
       ${formatI2EntitySummary(entity.i2EntityData)}
       <div class="popup-btn-row">
         <button class="popup-psc-btn" onclick="editEntity('${entityId}')">Edit</button>
@@ -3338,6 +3343,7 @@ function buildEntityPopup(entityId, entity) {
     ${entity.address ? `<span class="popup-label">Address</span> ${escapeHtml(entity.address)}<br>` : ''}
     ${entity.notes ? `<span class="popup-label">Notes</span> ${escapeHtml(entity.notes).replace(/\n/g, '<br>')}<br>` : ''}
     <span class="popup-label">Lat/Lng</span> ${entity.latLng[0].toFixed(5)}, ${entity.latLng[1].toFixed(5)}
+    ${popupStreetViewHtml}
     ${formatI2EntitySummary(entity.i2EntityData)}
     <div class="popup-btn-row">
       <button class="popup-psc-btn" onclick="editEntity('${entityId}')">Edit</button>
