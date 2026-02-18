@@ -1,0 +1,8 @@
+{
+  "geospatial": true,
+  "routing": true,
+  "imagery": true,
+  "environment": true,
+  "device_location": true,
+  "terrain": true
+}

@@ -31,6 +31,7 @@
 
   // False positive person first names
   const PERSON_FP = new Set(["Over","Fort","Great","South","North","East","West","New","The","For","With","From"]);
+  const GOOGLE_ENRICHMENT_MAX_PER_INGEST = 40;
 
   // ── Detect file type from filename ──
   function detectFileType(filename) {
@@ -129,7 +130,8 @@
     }
 
     // 3. Route to appropriate handler
-    var stats = { documentId: docId, filename: file.name, type: content.type, entities: 0, relationships: 0 };
+    var stats = { documentId: docId, filename: file.name, type: content.type, entities: 0, relationships: 0, enriched: 0 };
+    var enrichTargets = [];
 
     if (content.type === "intel_report" && typeof window.IntelImport?.importReport === "function") {
       // Delegate IR-format to existing intel_import.js
@@ -140,20 +142,22 @@
     }
 
     if (content.text) {
-      var extracted = extractEntitiesFromText(content.text, docId);
+      var extracted = extractEntitiesFromText(content.text, docId, enrichTargets);
       stats.entities += extracted.count;
       stats.relationships += extracted.relationships;
     }
 
     if (content.rows) {
-      var rowStats = await _ingestRows(content.rows, docId, mapCenter);
+      var rowStats = await _ingestRows(content.rows, docId, mapCenter, enrichTargets);
       stats.entities += rowStats.entities;
     }
 
     if (content.features) {
-      var geoStats = _ingestGeoJsonFeatures(content.features, docId);
+      var geoStats = _ingestGeoJsonFeatures(content.features, docId, enrichTargets);
       stats.entities += geoStats.entities;
     }
+
+    stats.enriched = await _runGoogleEnrichment(enrichTargets);
 
     // Update document entity with stats
     if (docId && window.EntityStore) {
@@ -161,7 +165,8 @@
         attributes: Object.assign(window.EntityStore.getEntity(docId)?.attributes || {}, {
           extractedEntities: stats.entities,
           extractedRelationships: stats.relationships,
-          contentType: content.type
+          contentType: content.type,
+          googleEnrichedEntities: stats.enriched
         })
       });
     }
@@ -171,7 +176,7 @@
   }
 
   // ── Extract entities from free text ──
-  function extractEntitiesFromText(text, documentId) {
+  function extractEntitiesFromText(text, documentId, enrichTargets) {
     if (!text || !window.EntityStore) return { count: 0, relationships: 0 };
 
     var count = 0;
@@ -196,13 +201,14 @@
       var dobM = text.match(dobRe);
 
       var latLng = _offsetFromCenter(mapCenter, entityIndex++);
-      window.EntityStore.addEntity({
+      var personId = window.EntityStore.addEntity({
         type: "person",
         label: fullName,
         latLng: latLng,
         attributes: { dob: dobM ? dobM[1] : "", firstName: match[1], surname: match[2] },
         source: source ? Object.assign({}, source, { excerpt: _getExcerpt(text, match.index) }) : null
       });
+      _queueGoogleEnrichment(enrichTargets, personId, latLng, "");
       count++;
     }
 
@@ -214,13 +220,14 @@
       if (seen[number]) continue;
       seen[number] = true;
       var latLng2 = _offsetFromCenter(mapCenter, entityIndex++);
-      window.EntityStore.addEntity({
+      var phoneId = window.EntityStore.addEntity({
         type: "phone",
         label: number,
         latLng: latLng2,
         attributes: { number: number },
         source: source ? Object.assign({}, source, { excerpt: _getExcerpt(text, match.index) }) : null
       });
+      _queueGoogleEnrichment(enrichTargets, phoneId, latLng2, "");
       count++;
     }
 
@@ -232,13 +239,14 @@
       if (seen[vrm]) continue;
       seen[vrm] = true;
       var latLng3 = _offsetFromCenter(mapCenter, entityIndex++);
-      window.EntityStore.addEntity({
+      var vehicleId = window.EntityStore.addEntity({
         type: "vehicle",
         label: "Vehicle " + vrm,
         latLng: latLng3,
         attributes: { vrm: vrm },
         source: source ? Object.assign({}, source, { excerpt: _getExcerpt(text, match.index) }) : null
       });
+      _queueGoogleEnrichment(enrichTargets, vehicleId, latLng3, "");
       count++;
     }
 
@@ -289,7 +297,7 @@
   }
 
   // ── Ingest tabular rows ──
-  async function _ingestRows(rows, docId, mapCenter) {
+  async function _ingestRows(rows, docId, mapCenter, enrichTargets) {
     if (!Array.isArray(rows) || !rows.length || !window.EntityStore) return { entities: 0 };
 
     // Detect columns
@@ -317,13 +325,14 @@
         }
       });
 
-      window.EntityStore.addEntity({
+      var rowEntityId = window.EntityStore.addEntity({
         type: type,
         label: label.substring(0, 120),
         latLng: latLng,
         attributes: attrs,
         source: docId ? { documentId: docId, method: "tabular_row", confidence: "high" } : null
       });
+      _queueGoogleEnrichment(enrichTargets, rowEntityId, latLng, attrs.address || attrs.Address || attrs.postcode || attrs.Postcode || "");
       count++;
     }
 
@@ -331,7 +340,7 @@
   }
 
   // ── Ingest GeoJSON features ──
-  function _ingestGeoJsonFeatures(features, docId) {
+  function _ingestGeoJsonFeatures(features, docId, enrichTargets) {
     if (!Array.isArray(features) || !window.EntityStore) return { entities: 0 };
 
     var count = 0;
@@ -351,13 +360,14 @@
         if (props[k] != null) attrs[k] = String(props[k]);
       });
 
-      window.EntityStore.addEntity({
+      var featureId = window.EntityStore.addEntity({
         type: "location",
         label: String(label).substring(0, 120),
         latLng: latLng,
         attributes: attrs,
         source: docId ? { documentId: docId, method: "geojson_feature", confidence: "high" } : null
       });
+      _queueGoogleEnrichment(enrichTargets, featureId, latLng, attrs.address || attrs.Address || label || "");
       count++;
     }
 
@@ -474,6 +484,77 @@
     var start = Math.max(0, index - 40);
     var end = Math.min(text.length, index + 80);
     return text.substring(start, end).replace(/\s+/g, " ").trim();
+  }
+
+  function _queueGoogleEnrichment(queue, entityId, latLng, address) {
+    if (!Array.isArray(queue)) return;
+    if (!entityId || !Array.isArray(latLng) || latLng.length < 2) return;
+    var lat = Number(latLng[0]);
+    var lng = Number(latLng[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+    queue.push({
+      entityId: entityId,
+      lat: lat,
+      lng: lng,
+      address: String(address || "").trim()
+    });
+  }
+
+  async function _runGoogleEnrichment(targets) {
+    if (!Array.isArray(targets) || !targets.length) return 0;
+    if (!window.EntityStore || !window.GoogleIntelligenceService) return 0;
+    if (typeof window.GoogleIntelligenceService.enrichLocation !== "function") return 0;
+    if (typeof window.GoogleIntelligenceService.isConfigured === "function" && !window.GoogleIntelligenceService.isConfigured()) return 0;
+
+    var deduped = [];
+    var seen = {};
+    for (var i = 0; i < targets.length; i++) {
+      var t = targets[i];
+      var key = String(t.entityId || "");
+      if (!key || seen[key]) continue;
+      seen[key] = true;
+      deduped.push(t);
+      if (deduped.length >= GOOGLE_ENRICHMENT_MAX_PER_INGEST) break;
+    }
+
+    var enriched = 0;
+    for (var j = 0; j < deduped.length; j++) {
+      var item = deduped[j];
+      try {
+        var entity = window.EntityStore.getEntity(item.entityId);
+        if (!entity) continue;
+        var intel = await window.GoogleIntelligenceService.enrichLocation({
+          lat: item.lat,
+          lng: item.lng,
+          address: item.address || entity.attributes?.address || ""
+        });
+        if (!intel || !intel.ok) continue;
+
+        var geo = intel.geocode || {};
+        var elev = intel.elevation || {};
+        var places = intel.nearbyPlaces || {};
+        var geoFirst = Array.isArray(geo.results) ? geo.results[0] : null;
+        var elevFirst = Array.isArray(elev.results) ? elev.results[0] : null;
+        var placeFirst = Array.isArray(places.results) ? places.results[0] : null;
+        var attrs = Object.assign({}, entity.attributes || {});
+
+        attrs.google_enriched_at = new Date().toISOString();
+        attrs.google_geocode_status = geo.status || "";
+        if (geoFirst && geoFirst.formatted_address) attrs.google_formatted_address = String(geoFirst.formatted_address);
+        if (geoFirst && geoFirst.place_id) attrs.google_place_id = String(geoFirst.place_id);
+        if (elevFirst && Number.isFinite(Number(elevFirst.elevation))) attrs.google_elevation_m = Number(elevFirst.elevation);
+        attrs.google_places_status = places.status || "";
+        attrs.google_nearby_count = Array.isArray(places.results) ? places.results.length : 0;
+        if (placeFirst && placeFirst.name) attrs.google_nearby_top = String(placeFirst.name);
+        if (intel.streetViewUrl) attrs.google_streetview_url = String(intel.streetViewUrl);
+
+        window.EntityStore.updateEntity(item.entityId, { attributes: attrs });
+        enriched++;
+      } catch (err) {
+        console.warn("[Ingestion] Google enrichment failed:", err);
+      }
+    }
+    return enriched;
   }
 
   // ── Public API ──
