@@ -1656,16 +1656,69 @@ function makePanelDraggable(panelEl, handleEl) {
 
 const tileCfg = CONTROL_ROOM_CONFIG.tiles;
 const baseLayers = {};
-for (const k in tileCfg) {
-  const t = tileCfg[k];
-  baseLayers[t.name] = L.tileLayer(t.url, {
-    attribution: t.attribution,
-    minZoom: CONTROL_ROOM_CONFIG.map.minZoom,
-    maxZoom: CONTROL_ROOM_CONFIG.map.maxZoom, ...(t.options || {})
-  });
-}
-baseLayers["Dark"].addTo(map);
 let activeBase = "Dark";
+let activeThemeName = String(document.documentElement?.dataset?.theme || "indigo").toLowerCase();
+
+function _resolveTileUrlByTheme(baseName, theme) {
+  const b = String(baseName || "").toLowerCase();
+  const t = String(theme || "indigo").toLowerCase();
+  if (b === "dark") {
+    if (t === "light") return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+    if (t === "warm" || t === "rose") return "https://{s}.basemaps.cartocdn.com/voyager/{z}/{x}/{y}{r}.png";
+    if (t === "noir") return "https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png";
+    return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+  }
+  if (b === "grey") {
+    if (t === "noir") return "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+    return "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png";
+  }
+  if (b === "street") {
+    if (t === "rose" || t === "warm") return "https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png";
+    return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+  }
+  return (tileCfg[Object.keys(tileCfg).find((k) => String(tileCfg[k]?.name || "").toLowerCase() === b)] || {}).url || "";
+}
+
+function _tileClassName(baseName, theme, extraClass = "") {
+  const baseSlug = String(baseName || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const themeSlug = String(theme || "indigo").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const extras = String(extraClass || "").trim();
+  return `cr-base-tile cr-base-${baseSlug} cr-theme-tiles-${themeSlug}${extras ? ` ${extras}` : ""}`;
+}
+
+function rebuildBaseLayersForTheme(themeName) {
+  const theme = String(themeName || "indigo").toLowerCase();
+  const previousActive = baseLayers[activeBase];
+  if (previousActive && map.hasLayer(previousActive)) {
+    map.removeLayer(previousActive);
+  }
+
+  Object.keys(baseLayers).forEach((name) => {
+    if (baseLayers[name] && map.hasLayer(baseLayers[name])) {
+      map.removeLayer(baseLayers[name]);
+    }
+    delete baseLayers[name];
+  });
+
+  for (const k in tileCfg) {
+    const t = tileCfg[k];
+    const resolvedUrl = _resolveTileUrlByTheme(t.name, theme) || t.url;
+    const mergedOptions = { ...(t.options || {}) };
+    mergedOptions.className = _tileClassName(t.name, theme, mergedOptions.className || "");
+    baseLayers[t.name] = L.tileLayer(resolvedUrl, {
+      attribution: t.attribution,
+      minZoom: CONTROL_ROOM_CONFIG.map.minZoom,
+      maxZoom: CONTROL_ROOM_CONFIG.map.maxZoom,
+      ...mergedOptions
+    });
+  }
+
+  activeThemeName = theme;
+  if (!baseLayers[activeBase]) activeBase = "Dark";
+  baseLayers[activeBase].addTo(map);
+}
+
+rebuildBaseLayersForTheme(activeThemeName);
 
 // â”€â”€ Overlay layers (ALL OFF by default) â”€â”€
 
@@ -8116,6 +8169,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (!allowedThemes.has(theme)) return;
         document.documentElement.dataset.theme = theme;
         localStorage.setItem("cr-theme", theme);
+        rebuildBaseLayersForTheme(theme);
         pills.forEach(q => q.classList.toggle("active", q === p));
       });
     });

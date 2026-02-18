@@ -354,6 +354,26 @@ body {
     linear-gradient(180deg, rgba(8, 24, 43, 0.16), rgba(15, 23, 42, 0.12));
 }
 
+/* Explicit basemap tile classes for hard theme coloration */
+.cr-theme-tiles-light {
+  filter: brightness(1.18) contrast(0.88) saturate(0.8) !important;
+}
+.cr-theme-tiles-noir {
+  filter: grayscale(0.28) brightness(0.82) contrast(1.2) saturate(0.72) !important;
+}
+.cr-theme-tiles-warm {
+  filter: hue-rotate(350deg) saturate(1.2) brightness(1) contrast(1.03) !important;
+}
+.cr-theme-tiles-arctic {
+  filter: hue-rotate(8deg) saturate(1.1) brightness(1.04) contrast(1.02) !important;
+}
+.cr-theme-tiles-teal {
+  filter: hue-rotate(8deg) saturate(1.28) brightness(0.95) contrast(1.08) !important;
+}
+.cr-theme-tiles-rose {
+  filter: hue-rotate(318deg) saturate(1.62) brightness(0.94) contrast(1.06) !important;
+}
+
 /* â”€â”€ Panel shell â”€â”€ */
 #control-panel {
   position: absolute; top: 12px; left: 12px; z-index: 1000;
