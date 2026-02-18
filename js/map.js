@@ -2582,6 +2582,7 @@ function renderI2FieldsForType(entityTypeKey) {
       `</details>`
     ) : "";
   fieldsContainer.innerHTML = header + coreHtml + advancedHtml;
+  renderAddressNumberInlineField(entityName);
   updateWarningMarkerVisibility();
 }
 
@@ -2648,6 +2649,7 @@ function ensureI2EntityCatalogLoaded(selectedCategory = "") {
 }
 
 function collectI2EntityFormData() {
+  syncAddressNumberInlineToI2();
   // Ensure Address String has propagated into structured fields before validation/export.
   syncAddressStringDerivedFields();
 
@@ -2767,6 +2769,76 @@ function setI2FieldIfEmpty(names, value) {
   field.value = val;
   field.dataset.autogen = "1";
   return true;
+}
+
+function isLocationLikeEntityName(entityName) {
+  const name = String(entityName || "").toLowerCase();
+  return /(location|address|building|site|premises|place|property)/.test(name);
+}
+
+function syncAddressNumberInlineToI2() {
+  const inline = document.getElementById("entity-address-number-inline");
+  if (!inline) return false;
+  const number = String(inline.value || "").trim();
+  if (!number) return false;
+
+  let updated = false;
+  const buildingField = getI2FieldByNames(["Building Number", "House Number", "Number"]);
+  if (buildingField) {
+    const current = String(buildingField.value || "").trim();
+    const auto = String(buildingField.dataset.autogen || "") === "1";
+    if (!current || auto) {
+      buildingField.value = number;
+      buildingField.dataset.autogen = "0";
+      updated = true;
+    }
+  }
+
+  const addrField = getI2FieldByNames(["Address String", "Address"]);
+  if (addrField) {
+    const currentAddress = String(addrField.value || "").trim();
+    const hasLeadingNumber = /^\s*\d+[A-Za-z]?\b/.test(currentAddress);
+    if (currentAddress && !hasLeadingNumber) {
+      addrField.value = `${number} ${currentAddress}`.trim();
+      addrField.dataset.autogen = "0";
+      updated = true;
+    }
+  }
+
+  return updated;
+}
+
+function renderAddressNumberInlineField(entityName = "") {
+  const wrap = document.getElementById("entity-i2-fields");
+  if (!wrap) return;
+
+  const existing = document.getElementById("entity-address-number-inline");
+  if (existing?.closest(".entity-i2-field-row")) {
+    existing.closest(".entity-i2-field-row").remove();
+  }
+  if (!isLocationLikeEntityName(entityName)) return;
+
+  const addrField = getI2FieldByNames(["Address String", "Address"]);
+  if (!addrField) return;
+  const addrRow = addrField.closest(".entity-i2-field-row");
+  if (!addrRow) return;
+
+  const buildingField = getI2FieldByNames(["Building Number", "House Number", "Number"]);
+  const parsed = parseAddressString(String(addrField.value || "").trim()) || {};
+  const startingNumber = String(buildingField?.value || parsed.buildingNumber || "").trim();
+
+  const row = document.createElement("div");
+  row.className = "entity-i2-field-row entity-address-number-row";
+  row.innerHTML =
+    `<label for="entity-address-number-inline">House Number</label>` +
+    `<input id="entity-address-number-inline" type="text" placeholder="e.g. 1" value="${escapeHtml(startingNumber)}">` +
+    `<div class="entity-i2-meta">Used for house-level geocoding and merged into Address String.</div>`;
+  addrRow.insertAdjacentElement("afterend", row);
+
+  const inline = document.getElementById("entity-address-number-inline");
+  inline?.addEventListener("input", () => {
+    syncAddressNumberInlineToI2();
+  });
 }
 
 function parseAddressString(rawAddress) {
@@ -2930,6 +3002,7 @@ function syncStructuredFieldsToAddressString() {
 }
 
 function syncAddressStringDerivedFields() {
+  syncAddressNumberInlineToI2();
   const addrField = getI2FieldByNames(["Address String", "Address"]);
   if (!addrField) return false;
   const currentAddress = String(addrField.value || "").trim();
@@ -7470,18 +7543,24 @@ document.addEventListener("DOMContentLoaded", async () => {
         geoMethod = "address";
       }
     }
+    if (!geoMethod && geocodeAddressString && hasSpecificAddress) {
+      const geoRelaxed = await geocodeAddress(geocodeAddressString, { strict: false });
+      if (geoRelaxed && Number.isFinite(geoRelaxed.lat) && Number.isFinite(geoRelaxed.lon)) {
+        placementLatLng = [geoRelaxed.lat, geoRelaxed.lon];
+        geoMethod = "address_relaxed";
+        showToast("Exact house match unavailable; using closest address result", "warning");
+      }
+    }
     const geoPostcode = postcode || extractedPostcode;
-    if (!geoMethod && geoPostcode && !hasSpecificAddress) {
+    if (!geoMethod && geoPostcode) {
       const geo = await geocodePostcode(geoPostcode);
       if (geo && Number.isFinite(geo.lat) && Number.isFinite(geo.lon)) {
         placementLatLng = [geo.lat, geo.lon];
-        geoMethod = "postcode";
+        geoMethod = hasSpecificAddress ? "postcode_fallback" : "postcode";
+        if (geoMethod === "postcode_fallback") {
+          showToast("Address unresolved at house level; using postcode centroid", "warning");
+        }
       }
-    }
-    if (!geoMethod && hasSpecificAddress && geoPostcode) {
-      showToast("Exact address match not found; postcode fallback skipped to avoid wrong house number", "warning");
-      setStatus("Address geocode failed: no exact house-level match found");
-      return;
     }
     if (!geoMethod && hasSpecificAddress && !geoPostcode) {
       showToast("Exact address match not found; entity not placed", "error");
@@ -7520,6 +7599,8 @@ document.addEventListener("DOMContentLoaded", async () => {
       closeEntityPanel();
       setStatus(
         geoMethod === "address" ? `Updated: ${label} (full address geocoded)` :
+        geoMethod === "address_relaxed" ? `Updated: ${label} (closest address geocoded)` :
+        geoMethod === "postcode_fallback" ? `Updated: ${label} (postcode fallback)` :
         geoMethod === "postcode" ? `Updated: ${label} (postcode geocoded)` :
         `Updated: ${label}`
       );
@@ -7533,6 +7614,8 @@ document.addEventListener("DOMContentLoaded", async () => {
     closeEntityPanel();
     setStatus(
       geoMethod === "address" ? `Placed: ${label} (full address geocoded)` :
+      geoMethod === "address_relaxed" ? `Placed: ${label} (closest address geocoded)` :
+      geoMethod === "postcode_fallback" ? `Placed: ${label} (postcode fallback)` :
       geoMethod === "postcode" ? `Placed: ${label} (postcode geocoded)` :
       `Placed: ${label}`
     );
