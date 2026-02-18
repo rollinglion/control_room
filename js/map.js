@@ -838,6 +838,32 @@ function renderCrimeLayerFiltered() {
 }
 
 async function ensureCrimeLoaded() {
+  async function fetchCrimeGeoJson() {
+    const urls = [
+      "data/processed/crime_grid.geojson",
+      "data/Processed/crime_grid.geojson"
+    ];
+    let lastErr = null;
+    for (const baseUrl of urls) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const url = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}_cb=${Date.now()}_${attempt}`;
+        try {
+          const r = await fetch(url, { cache: "no-store" });
+          if (!r.ok) throw new Error(`Crime file not found (${r.status})`);
+          const raw = await r.text();
+          const data = JSON.parse(raw);
+          if (!data || !Array.isArray(data.features)) {
+            throw new Error("Crime payload missing features");
+          }
+          return data;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`[Crime] load attempt ${attempt} failed for ${baseUrl}`, err);
+        }
+      }
+    }
+    throw lastErr || new Error("Crime data load failed");
+  }
 
   if (OVERLAY_LOAD_STATE.crimeLoaded)
     return true;
@@ -846,16 +872,7 @@ async function ensureCrimeLoaded() {
     return OVERLAY_LOAD_STATE.crimeLoading;
 
   OVERLAY_LOAD_STATE.crimeLoading =
-    fetch("data/Processed/crime_grid.geojson")
-
-      .then(r => {
-
-        if (!r.ok)
-          throw new Error("Crime file not found");
-
-        return r.json();
-
-      })
+    fetchCrimeGeoJson()
 
       .then(data => {
 

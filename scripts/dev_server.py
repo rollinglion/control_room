@@ -77,6 +77,7 @@ RAILDATA_ALLOWED_HOSTS = {
 }
 
 STATIC_ACCELERATED_FILES = {
+    "/data/Processed/crime_grid.geojson": ("data/Processed/crime_grid.geojson", "application/geo+json"),
     "/data/processed/crime_grid.geojson": ("data/processed/crime_grid.geojson", "application/geo+json"),
     "/data/police_force_areas_wgs84.geojson": ("data/police_force_areas_wgs84.geojson", "application/geo+json"),
 }
