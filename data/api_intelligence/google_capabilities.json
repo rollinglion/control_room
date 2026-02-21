@@ -4,5 +4,10 @@
   "imagery": true,
   "environment": true,
   "device_location": true,
-  "terrain": true
+  "terrain": true,
+  "places_intelligence": true,
+  "street_view_static": true,
+  "routes_advanced": true,
+  "timezone_resolution": true,
+  "aerial_view": true
 }

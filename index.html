@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <script>
     (function blockFileProtocolMode() {
       if (window.location.protocol !== "file:") return;
@@ -74,7 +74,7 @@
         <span class="kpi-value" id="kpi-searches">0</span>
         <span class="kpi-label">Searches</span>
       </div>
-      <div class="kpi-card kpi-card-alert" title="Alert events">
+      <div class="kpi-card" id="kpi-card-alerts" title="Alert events logged this session">
         <span class="kpi-value" id="kpi-alerts">0</span>
         <span class="kpi-label">Alerts</span>
       </div>
@@ -98,60 +98,60 @@
     <div class="kpi-pill-group">
       <span class="kpi-pill-label">Theme</span>
       <div class="kpi-pills" id="theme-pills">
-        <button class="kpi-pill active" data-theme="indigo">Indigo</button>
-        <button class="kpi-pill" data-theme="light">Light</button>
-        <button class="kpi-pill" data-theme="noir">Noir</button>
-        <button class="kpi-pill" data-theme="warm">Warm</button>
-        <button class="kpi-pill" data-theme="arctic">Arctic</button>
-        <button class="kpi-pill" data-theme="teal">Teal</button>
-        <button class="kpi-pill" data-theme="rose">Rose</button>
+        <button class="kpi-pill active" data-theme="indigo"><span class="theme-swatch" style="background:#6366f1"></span>Indigo</button>
+        <button class="kpi-pill" data-theme="light"><span class="theme-swatch" style="background:#2563eb;box-shadow:0 0 0 1px rgba(0,0,0,0.15)"></span>Light</button>
+        <button class="kpi-pill" data-theme="noir"><span class="theme-swatch" style="background:#475569"></span>Noir</button>
+        <button class="kpi-pill" data-theme="warm"><span class="theme-swatch" style="background:#f59e0b"></span>Warm</button>
+        <button class="kpi-pill" data-theme="arctic"><span class="theme-swatch" style="background:#38bdf8"></span>Arctic</button>
+        <button class="kpi-pill" data-theme="teal"><span class="theme-swatch" style="background:#2dd4bf"></span>Teal</button>
+        <button class="kpi-pill" data-theme="rose"><span class="theme-swatch" style="background:#f472b6"></span>Rose</button>
       </div>
     </div>
     <div class="kpi-separator"></div>
     <div class="kpi-actions">
-      <button class="kpi-action-btn" id="kpi-btn-save" title="Save workspace (Ctrl+S)">Save</button>
-      <button class="kpi-action-btn kpi-action-intel" id="kpi-btn-report" title="3x5x2 Intelligence Report (Ctrl+Shift+R)">3x5x2</button>
-      <button class="kpi-action-btn" id="kpi-btn-anx" title="Export i2 ANX (Ctrl+Shift+X)">i2 ANX</button>
-      <button class="kpi-action-btn" id="kpi-btn-excel" title="Export structured Excel">Excel</button>
-      <button class="kpi-action-btn kpi-action-help" id="kpi-btn-help" title="Keyboard shortcuts (F1)">F1</button>
+      <button class="kpi-action-btn" id="kpi-btn-minimize-ui" title="Focus mode — collapse menus and overlays"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M1 2h9M3 0.5v2M8 0.5v2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><rect x="2" y="4.5" width="7" height="5" rx="0.5" stroke="currentColor" stroke-width="1.2"/></svg>Focus</button>
+      <button class="kpi-action-btn" id="kpi-btn-save" title="Save workspace (Ctrl+S)"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M1 10V2a1 1 0 011-1h5.5L10 3.5V10a1 1 0 01-1 1H2a1 1 0 01-1-1z" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 1v3h4V1" stroke="currentColor" stroke-width="1.2"/><rect x="2.5" y="6.5" width="6" height="3" rx="0.3" stroke="currentColor" stroke-width="1.2"/></svg>Save</button>
+      <button class="kpi-action-btn kpi-action-intel" id="kpi-btn-report" title="Generate 3×5×2 NCA Intelligence Report (Ctrl+Shift+R)"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><rect x="1" y="0.5" width="9" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M3.5 3.5h4M3.5 5.5h4M3.5 7.5h2.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>3×5×2</button>
+      <button class="kpi-action-btn" id="kpi-btn-anx" title="Export as i2 Analyst's Notebook ANX (Ctrl+Shift+X)"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M6.5 1H10v3.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 1L5.5 5.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><path d="M4.5 2.5H2A1 1 0 001 3.5V9A1 1 0 002 10H8A1 1 0 009 9V6.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>i2 ANX</button>
+      <button class="kpi-action-btn" id="kpi-btn-excel" title="Export structured Excel spreadsheet"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><rect x="0.5" y="0.5" width="10" height="10" rx="1" stroke="currentColor" stroke-width="1.2"/><path d="M0.5 4h10M0.5 7.5h10M4 0.5v10M7.5 0.5v10" stroke="currentColor" stroke-width="1" opacity="0.6"/></svg>Excel</button>
+      <button class="kpi-action-btn" id="kpi-btn-command" title="Open command palette (Ctrl+K)"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><path d="M1.5 2.5L4 5.5 1.5 8.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M5.5 8.5h4" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>Cmd</button>
+      <button class="kpi-action-btn kpi-action-help" id="kpi-btn-help" title="Keyboard shortcuts reference (F1)"><svg class="kpi-btn-icon" width="11" height="11" viewBox="0 0 11 11" fill="none" aria-hidden="true"><circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" stroke-width="1.2"/><path d="M4 4.2C4 3.4 4.7 3 5.5 3s1.5.7 1.5 1.5c0 .8-1.5 1.3-1.5 2.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="5.5" cy="8.5" r="0.4" fill="currentColor"/></svg>Help</button>
     </div>
   </div>
 
   <div id="control-panel">
-    <div class="cp-header">
-      <span class="cp-title">OPERATIONS</span>
+    <div class="cp-header panel-draggable-handle">
+      <span class="cp-title" id="cp-title">SEARCH</span>
       <div class="cp-header-actions">
-        <button id="cp-menu-btn" class="cp-menu-btn" type="button" title="Open panel menu">Menu</button>
-        <div id="cp-menu" class="cp-menu hidden" role="menu" aria-hidden="true">
-          <button class="cp-menu-item" type="button" data-tab-target="search" role="menuitem">Search</button>
-          <button class="cp-menu-item" type="button" data-tab-target="entities" role="menuitem">Entities</button>
-          <button class="cp-menu-item" type="button" data-tab-target="layers" role="menuitem">Layers</button>
-        </div>
-        <button id="cp-toggle" title="Collapse panel">&minus;</button>
+        <button id="cp-toggle" title="Collapse panel" aria-label="Collapse panel">&minus;</button>
       </div>
     </div>
-    <div class="cp-meta-strip">
-      <span class="cp-meta-chip"><strong id="cp-active-layers">0</strong> Layers</span>
-      <span class="cp-meta-chip"><strong id="cp-entities-chip">0</strong> Entities</span>
-      <span class="cp-meta-chip"><strong id="cp-links-chip">0</strong> Links</span>
-    </div>
-    <div class="cp-command-strip" aria-label="Primary actions">
-      <button id="cp-cmd-search" class="cp-command-btn" type="button">Company Search</button>
-      <button id="cp-cmd-place" class="cp-command-btn" type="button">Place Entity</button>
-      <button id="cp-cmd-crime" class="cp-command-btn" type="button">Crime Tools</button>
-      <button id="cp-cmd-layers" class="cp-command-btn" type="button">Layers</button>
-    </div>
+    <!-- Hidden chips kept for map.js DOM references -->
+    <span id="cp-active-layers" style="display:none">0</span>
+    <span id="cp-entities-chip" style="display:none">0</span>
+    <span id="cp-links-chip" style="display:none">0</span>
 
     <div class="cp-body" id="cp-body">
       <!-- Tabs -->
       <div class="cp-tabs" role="tablist" aria-label="Control panel sections">
-        <button id="cp-tab-btn-search" class="cp-tab active" data-tab="search" title="Search companies and people" role="tab" aria-controls="tab-search" aria-selected="true" tabindex="0">Search</button>
-        <button id="cp-tab-btn-entities" class="cp-tab" data-tab="entities" title="Add custom entities to map" role="tab" aria-controls="tab-entities" aria-selected="false" tabindex="-1">Entities</button>
-        <button id="cp-tab-btn-layers" class="cp-tab" data-tab="layers" title="Toggle map layers and base map" role="tab" aria-controls="tab-layers" aria-selected="false" tabindex="-1">Layers</button>
+        <button id="cp-tab-btn-search" class="cp-tab active" data-tab="search" title="Search companies and people" role="tab" aria-controls="tab-search" aria-selected="true" tabindex="0"><svg class="tab-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><circle cx="5.5" cy="5.5" r="3.5" stroke="currentColor" stroke-width="1.5"/><path d="M8.5 8.5l2.5 2.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Search</button>
+        <button id="cp-tab-btn-entities" class="cp-tab" data-tab="entities" title="Add custom entities to map" role="tab" aria-controls="tab-entities" aria-selected="false" tabindex="-1"><svg class="tab-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><circle cx="6.5" cy="4" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M2.5 11.5c0-2.2 1.8-4 4-4s4 1.8 4 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Entities</button>
+        <button id="cp-tab-btn-layers" class="cp-tab" data-tab="layers" title="Toggle map layers and base map" role="tab" aria-controls="tab-layers" aria-selected="false" tabindex="-1"><svg class="tab-icon" width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true"><path d="M1.5 5l5-2.5 5 2.5-5 2.5z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M1.5 8.5l5 2.5 5-2.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>Layers</button>
       </div>
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Company Search Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
       <div class="cp-tab-pane active" id="tab-search" role="tabpanel" aria-labelledby="cp-tab-btn-search" aria-hidden="false">
+        <div class="ops-source-tabs" role="tablist" aria-label="Search source categories">
+          <button type="button" class="ops-source-tab active" data-ops-tab="companies" title="Companies House — search 5.7M UK companies">Companies</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="people" title="People, officers and Persons with Significant Control">People</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="land" title="HM Land Registry price paid data by postcode">Land Reg.</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="disqualified" title="Companies House disqualified directors register">Directors</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="charity" title="Charity Commission register for England & Wales">Charities</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="mostwanted" title="NCA Most Wanted local database">NCA</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="sanvessel" title="Sanctioned vessels by name, IMO, MMSI or flag">Vessels</button>
+          <button type="button" class="ops-source-tab" data-ops-tab="vehicle" title="DVLA Vehicle Enquiry Service by registration number">DVLA</button>
+        </div>
+        <div class="ops-source-pane active" data-ops-pane="companies">
         <div id="data-progress" class="cp-progress done">
           <div class="cp-progress-label">
             <span id="progress-text">Searching...</span>
@@ -161,13 +161,6 @@
             <div class="cp-progress-fill" id="progress-fill"></div>
           </div>
         </div>
-
-        <div class="cp-quick-actions" aria-label="Search quick actions">
-          <button id="quick-search-company" class="quick-action-btn" type="button">Company Search</button>
-          <button id="quick-search-officer" class="quick-action-btn" type="button">Officer / PSC</button>
-          <button id="quick-search-dvla" class="quick-action-btn" type="button">Vehicle Lookup</button>
-        </div>
-        <div class="cp-quick-hint">Tip: Use quick actions to jump to the right tool without scrolling.</div>
 
         <label for="ch_name">Company Name</label>
         <input id="ch_name" type="text" placeholder="e.g. Bristol City" />
@@ -243,8 +236,9 @@
 
         <div id="ch_api_selected"></div>
         <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â END QUICK SEARCH Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
+        </div>
 
-        <details class="panel-disclosure" id="people-ops-block">
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="people" id="people-ops-block" open>
           <summary>People / Officer / PSC Search</summary>
           <div id="psc-progress" class="cp-progress done">
             <div class="cp-progress-label">
@@ -279,7 +273,7 @@
           <div id="psc_results"></div>
         </details>
 
-        <details class="panel-disclosure" id="land-registry-block">
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="land" id="land-registry-block" open>
           <summary>Land Registry (Price Paid)</summary>
           <label for="lr-postcode">Postcode</label>
           <div class="roads-row">
@@ -292,7 +286,7 @@
           <div id="lr-results" class="nr-results"></div>
         </details>
 
-        <details class="panel-disclosure" id="disqualified-directors-block">
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="disqualified" id="disqualified-directors-block" open>
           <summary>Disqualified Directors</summary>
           <label for="dq-name">Director Name</label>
           <div class="roads-row">
@@ -305,7 +299,7 @@
           <div id="dq-results" class="nr-results"></div>
         </details>
 
-        <details class="panel-disclosure" id="charity-block">
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="charity" id="charity-block" open>
           <summary>Charity Commission</summary>
           <label for="charity-name">Charity Name</label>
           <div class="roads-row">
@@ -318,7 +312,34 @@
           <div id="charity-results" class="nr-results"></div>
         </details>
 
-        <details class="panel-disclosure" id="dvla-ops-block">
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="mostwanted" id="mostwanted-block" open>
+          <summary>UK NCA Most Wanted (Local)</summary>
+          <label for="mostwanted-name">Name / Alias / Notes</label>
+          <div class="roads-row">
+            <input id="mostwanted-name" type="text" placeholder="e.g. surname, alias, offence keyword" />
+            <button id="mostwanted-search-btn" class="btn-primary btn-sm" type="button">Search</button>
+            <button id="mostwanted-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
+          </div>
+          <div id="mostwanted-meta" class="mostwanted-status" aria-live="polite"></div>
+          <div id="mostwanted-results" class="nr-results"></div>
+        </details>
+
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="sanvessel" id="sanvessel-block" open>
+          <summary>Sanctioned Vessels (Local)</summary>
+          <label for="sanvessel-name">Vessel / IMO / MMSI / Flag / Risk</label>
+          <div class="roads-row">
+            <input id="sanvessel-name" type="text" placeholder="e.g. vessel name, IMO number, risk tag" />
+            <button id="sanvessel-search-btn" class="btn-primary btn-sm" type="button">Search</button>
+            <button id="sanvessel-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
+          </div>
+          <div class="cp-btn-row">
+            <button id="sanvessel-highlight-btn" class="btn-secondary btn-sm" type="button">Highlight Sanctioned On AIS</button>
+          </div>
+          <div id="sanvessel-meta" class="mostwanted-status" aria-live="polite"></div>
+          <div id="sanvessel-results" class="nr-results"></div>
+        </details>
+
+        <details class="panel-disclosure ops-source-pane" data-ops-pane="vehicle" id="dvla-ops-block" open>
           <summary>DVLA Vehicle Lookup</summary>
           <label for="dvla-vrm-input">Registration Number (VRM)</label>
           <div class="roads-row">
@@ -338,14 +359,6 @@
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Entities Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
       <div class="cp-tab-pane" id="tab-entities" role="tabpanel" aria-labelledby="cp-tab-btn-entities" aria-hidden="true">
-        <div class="cp-quick-actions" aria-label="Entity quick actions">
-          <button id="quick-entity-place" class="quick-action-btn" type="button">Place Entity</button>
-          <button id="quick-entity-import" class="quick-action-btn" type="button">Import File</button>
-          <button id="quick-intel-import" class="quick-action-btn" type="button">Import Intel</button>
-          <button id="quick-entity-export" class="quick-action-btn" type="button">Export Excel</button>
-        </div>
-        <div class="cp-quick-hint">Use drag-and-drop import for fast demos, then refine with manual links.</div>
-
         <!-- Entity Search -->
         <div class="entity-search-panel">
           <div class="entity-search-row">
@@ -366,7 +379,7 @@
           <div id="entity-search-results" class="entity-search-results-container"></div>
         </div>
 
-        <details class="panel-disclosure" open>
+        <details class="panel-disclosure">
           <summary>Quick Guide</summary>
           <div class="entity-help">
             <strong>Entity Placement + i2 Workspace</strong>
@@ -376,7 +389,7 @@
           </div>
         </details>
 
-        <details class="panel-disclosure" open>
+        <details class="panel-disclosure">
           <summary>Import & Bulk Tools</summary>
           <div class="entity-import-panel">
             <div class="entity-import-title">Import Files</div>
@@ -458,25 +471,7 @@
         </details>
 
         <details class="panel-disclosure">
-          <summary>Data Sources Available</summary>
-          <div class="data-sources-grid">
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Companies House</span><span class="ds-badge">API</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">PSC Register</span><span class="ds-badge">API</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Land Registry</span><span class="ds-badge">API</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">Charity Commission</span><span class="ds-badge">API</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">DVLA VES</span><span class="ds-badge">PROXY</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">TfL Unified</span><span class="ds-badge">API</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">FlightRadar24</span><span class="ds-badge">LIVE</span></div>
-            <div class="ds-item ds-open"><span class="ds-dot ds-dot-green"></span><span class="ds-name">National Rail</span><span class="ds-badge">STATIC</span></div>
-            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">PNC</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
-            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">PND</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
-            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">SARs / ELMER</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
-            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">Experian</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
-            <div class="ds-item ds-restricted"><span class="ds-dot ds-dot-amber"></span><span class="ds-name">GB Connexus</span><span class="ds-badge ds-badge-restricted">RESTRICTED</span></div>
-          </div>
-          <div class="psc-help-text">
-            Open sources connect via API. Restricted sources are available for manual entry in 3x5x2 intelligence reports only.
-          </div>
+          <summary>Google Intelligence</summary>
           <div class="google-api-dashboard">
             <div class="google-api-header">
               <span>Google Maps Platform Intelligence</span>
@@ -486,9 +481,60 @@
                 <button id="google-api-enrich-selected-btn" class="btn-secondary btn-sm" type="button">Enrich Selected</button>
               </div>
             </div>
+            <div id="google-api-state" class="google-api-state">Checking key + service availability...</div>
             <div id="google-api-capability-matrix" class="google-api-capability-matrix"></div>
             <div id="google-api-dashboard-list" class="google-api-dashboard-list"></div>
             <div id="google-api-selftest" class="psc-help-text">Awaiting probe...</div>
+
+            <div class="google-tools-grid">
+              <section class="google-tool-card">
+                <h4>Location Intel</h4>
+                <div class="google-tool-row">
+                  <input id="google-intel-location" type="text" placeholder="Address or lat,lng" />
+                  <button id="google-intel-run-btn" class="btn-primary btn-sm" type="button">Analyze</button>
+                </div>
+                <div class="google-tool-row">
+                  <button id="google-intel-use-map-btn" class="btn-secondary btn-sm" type="button">Use Map Center</button>
+                  <button id="google-intel-clear-btn" class="btn-secondary btn-sm" type="button">Clear</button>
+                </div>
+                <div id="google-intel-output" class="google-tool-output">No analysis yet.</div>
+              </section>
+
+              <section class="google-tool-card">
+                <h4>Places Search</h4>
+                <div class="google-tool-row">
+                  <input id="google-places-query" type="text" placeholder="e.g. cash point, vehicle repair, storage" />
+                  <button id="google-places-run-btn" class="btn-primary btn-sm" type="button">Search</button>
+                </div>
+                <div class="google-tool-row">
+                  <label class="google-tool-check">
+                    <input id="google-places-near-map" type="checkbox" checked />
+                    Bias to map center
+                  </label>
+                </div>
+                <div id="google-places-output" class="google-tool-output">No places results yet.</div>
+              </section>
+
+              <section class="google-tool-card">
+                <h4>Route Estimate</h4>
+                <div class="google-tool-row">
+                  <input id="google-route-origin" type="text" placeholder="Origin (address or lat,lng)" />
+                </div>
+                <div class="google-tool-row">
+                  <input id="google-route-destination" type="text" placeholder="Destination (address or lat,lng)" />
+                </div>
+                <div class="google-tool-row">
+                  <select id="google-route-mode">
+                    <option value="driving">Driving</option>
+                    <option value="walking">Walking</option>
+                    <option value="bicycling">Cycling</option>
+                    <option value="transit">Transit</option>
+                  </select>
+                  <button id="google-route-run-btn" class="btn-primary btn-sm" type="button">Compute</button>
+                </div>
+                <div id="google-route-output" class="google-tool-output">No route analysis yet.</div>
+              </section>
+            </div>
           </div>
         </details>
 
@@ -527,31 +573,6 @@
 
       <!-- Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â Layers Tab Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
       <div class="cp-tab-pane" id="tab-layers" role="tabpanel" aria-labelledby="cp-tab-btn-layers" aria-hidden="true">
-        <div class="cp-quick-actions" aria-label="Layer quick actions">
-          <button id="quick-layer-underground" class="quick-action-btn" type="button">Toggle TfL</button>
-          <button id="quick-layer-flights" class="quick-action-btn" type="button">Toggle Flights</button>
-          <button id="quick-layer-health" class="quick-action-btn" type="button">Refresh Health</button>
-        </div>
-        <div class="cp-quick-hint">Layers now support presets, search, and smart prefetch. Load only what you need.</div>
-
-        <div class="layer-status-grid">
-          <div class="layer-status-card">
-            <span class="layer-status-label">Active Layers</span>
-            <span class="layer-status-value" id="layer-summary-active">0</span>
-            <span class="layer-status-sub">Currently visible on map</span>
-          </div>
-          <div class="layer-status-card">
-            <span class="layer-status-label">Warmed Datasets</span>
-            <span class="layer-status-value" id="layer-summary-warmed">0</span>
-            <span class="layer-status-sub">Idle prefetched overlays</span>
-          </div>
-          <div class="layer-status-card layer-status-card-compact">
-            <span class="layer-status-label">Prefetch</span>
-            <span class="layer-status-chip" id="layer-summary-prefetch">AUTO</span>
-            <span class="layer-status-sub" id="layer-summary-prefetch-detail">Evaluating connection...</span>
-          </div>
-        </div>
-
         <div class="layer-search-panel">
           <div class="layer-search-input">
             <input id="layer-search-input" type="text" placeholder="Search layers (e.g. rail, crime, telecom)" aria-label="Search layers" />
@@ -560,34 +581,21 @@
           <div class="layer-search-meta">Filter stacks instantly or press <kbd>Esc</kbd> to reset.</div>
         </div>
 
-        <div class="layer-section-title">Mission Loadouts</div>
-        <div class="layer-preset-grid">
-          <button class="layer-preset-btn" type="button" data-loadout="transport">
-            <span class="preset-title">Transport Sweep</span>
-            <span class="preset-sub">TfL · NR · Service/EV</span>
-          </button>
-          <button class="layer-preset-btn" type="button" data-loadout="aviation">
-            <span class="preset-title">Aviation Watch</span>
-            <span class="preset-sub">UK &amp; Global Airports · Flights</span>
-          </button>
-          <button class="layer-preset-btn" type="button" data-loadout="maritime">
-            <span class="preset-title">Maritime Ops</span>
-            <span class="preset-sub">Seaports · Live AIS</span>
-          </button>
-          <button class="layer-preset-btn" type="button" data-loadout="infrastructure">
-            <span class="preset-title">Critical Infrastructure</span>
-            <span class="preset-sub">Cell Towers · Crime Heat</span>
-          </button>
-        </div>
-        <div class="layer-preset-footer">
-          <button id="layer-reset-btn" class="layer-reset-btn" type="button">Reset to Baseline</button>
-          <span class="layer-preset-hint">Presets toggle recommended overlays. Reset keeps core layers only.</span>
-        </div>
-
-        <div class="layer-section-title">Layer Catalog</div>
+        <div class="layer-section-title">Layer Controls</div>
         <div id="layer-search-empty" class="layer-search-empty hidden">No layers match your search filter.</div>
 
-        <details class="panel-disclosure layer-group" data-layer-group="transport" open>
+        <details class="panel-disclosure layer-group" data-layer-group="intel">
+          <summary>Core &amp; Intel</summary>
+
+          <label class="layer-row" data-layer-name="Companies (search)">
+            <input type="checkbox" class="layer-cb" data-layer="companies" checked>
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#a78bfa"></span>
+            <span class="layer-name">Companies (search)</span>
+          </label>
+        </details>
+
+        <details class="panel-disclosure layer-group" data-layer-group="transport">
           <summary>Transport</summary>
 
           <label class="layer-row" data-layer-name="TfL Stations (Underground, DLR, Tram, Rail)">
@@ -649,26 +657,8 @@
           </label>
         </details>
 
-        <details class="panel-disclosure layer-group" data-layer-group="intel">
-          <summary>Intel & Core</summary>
-
-          <label class="layer-row" data-layer-name="Police Force Areas">
-            <input type="checkbox" class="layer-cb" data-layer="areas">
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="layer-dot" style="background:#818cf8"></span>
-            <span class="layer-name">Police Force Areas</span>
-          </label>
-
-          <label class="layer-row" data-layer-name="Companies (search)">
-            <input type="checkbox" class="layer-cb" data-layer="companies" checked>
-            <span class="toggle-track"><span class="toggle-thumb"></span></span>
-            <span class="layer-dot" style="background:#a78bfa"></span>
-            <span class="layer-name">Companies (search)</span>
-          </label>
-        </details>
-
         <details class="panel-disclosure layer-tool-block">
-          <summary>Airport Finder</summary>
+          <summary>Aviation Finder</summary>
           <div class="airport-tools">
             <label for="airport-search-q">Airport (IATA / ICAO / Name / City)</label>
             <div class="airport-row">
@@ -681,7 +671,7 @@
             <div id="airport-search-results" class="airport-results"></div>
           </div>
         </details>
-        <details class="panel-disclosure layer-group" data-layer-group="maritime" open>
+        <details class="panel-disclosure layer-group" data-layer-group="maritime">
           <summary>Maritime</summary>
 
           <label class="layer-row" data-layer-name="Seaports">
@@ -700,14 +690,21 @@
 
         </details>
 
-        <details class="panel-disclosure layer-group" data-layer-group="infrastructure" open>
-          <summary>Infrastructure</summary>
+        <details class="panel-disclosure layer-group" data-layer-group="infrastructure">
+          <summary>Infrastructure &amp; Crime</summary>
 
           <label class="layer-row" data-layer-name="Cell Towers (Telecom Infrastructure)">
             <input type="checkbox" class="layer-cb" data-layer="cellTowers">
             <span class="toggle-track"><span class="toggle-thumb"></span></span>
             <span class="layer-dot" style="background:#22c55e"></span>
             <span class="layer-name">Cell Towers (Telecom Infrastructure)</span>
+          </label>
+
+          <label class="layer-row" data-layer-name="Police Force Areas">
+            <input type="checkbox" class="layer-cb" data-layer="areas">
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="layer-dot" style="background:#818cf8"></span>
+            <span class="layer-name">Police Force Areas</span>
           </label>
 
           <label class="layer-row" data-layer-name="Crime Incidents">
@@ -1029,11 +1026,20 @@
 
   <div id="map"></div>
   <div id="map-theme-overlay" aria-hidden="true"></div>
+  <aside id="mostwanted-side-panel" class="mostwanted-side-panel hidden" aria-label="Most Wanted Results">
+    <div class="mostwanted-side-header">
+      <span>Most Wanted Results</span>
+      <button id="mostwanted-side-close" type="button" title="Hide results">&times;</button>
+    </div>
+    <div id="mostwanted-side-meta" class="mostwanted-status inline"></div>
+    <div id="mostwanted-side-results" class="mostwanted-side-results"></div>
+  </aside>
 
   <!-- ═══ BOTTOM ANALYSIS PANEL ═══ -->
   <div id="bottom-panel" class="bottom-panel">
     <div class="bp-header">
       <div class="bp-tabs">
+        <button class="bp-tab-btn" data-bp-target="mapstate" title="Layer and cache status">Map State</button>
         <button class="bp-tab-btn" data-bp-target="graph" title="Network Graph (Ctrl+G)">Link Analysis</button>
         <button class="bp-tab-btn" data-bp-target="timeline" title="Timeline (Ctrl+T)">Timeline</button>
         <button class="bp-tab-btn" data-bp-target="activity" title="Activity Log (Ctrl+H)">Activity</button>
@@ -1045,6 +1051,27 @@
       </div>
     </div>
     <div class="bp-body">
+      <div class="bp-tab-pane" data-bp-tab="mapstate">
+        <div class="bp-layer-state">
+          <div class="layer-status-grid">
+            <div class="layer-status-card">
+              <span class="layer-status-label">Active Layers</span>
+              <span class="layer-status-value" id="layer-summary-active">0</span>
+              <span class="layer-status-sub">Currently visible on map</span>
+            </div>
+            <div class="layer-status-card">
+              <span class="layer-status-label">Warmed Datasets</span>
+              <span class="layer-status-value" id="layer-summary-warmed">0</span>
+              <span class="layer-status-sub">Idle prefetched overlays</span>
+            </div>
+            <div class="layer-status-card layer-status-card-compact">
+              <span class="layer-status-label">Prefetch</span>
+              <span class="layer-status-chip" id="layer-summary-prefetch">AUTO</span>
+              <span class="layer-status-sub" id="layer-summary-prefetch-detail">Evaluating connection...</span>
+            </div>
+          </div>
+        </div>
+      </div>
       <!-- Graph Tab -->
       <div class="bp-tab-pane" data-bp-tab="graph">
         <div id="graph-toolbar" class="graph-toolbar"></div>
@@ -1116,6 +1143,7 @@
   <script src="js/intel_export.js"></script>
   <script src="js/intel_import.js"></script>
   <script src="js/doc_converter.js"></script>
+  <script src="js/ux_assistant.js?v=20260220a"></script>
   <script src="js/sw-register.js"></script>
 
   <!-- Entity Inspector + Search Init -->
@@ -1197,6 +1225,13 @@
 
   <!-- Wire KPI bar action buttons -->
   <script>
+    // Dynamic panel title — updates when tab changes
+    const _tabTitles = { search: "SEARCH", entities: "ENTITIES", layers: "LAYERS" };
+    document.addEventListener("controlroom:tabchange", (e) => {
+      const titleEl = document.getElementById("cp-title");
+      if (titleEl) titleEl.textContent = _tabTitles[e.detail?.tab] || "OPERATIONS";
+    });
+
     document.getElementById("kpi-btn-save")?.addEventListener("click", () => {
       if (window.CRDashboard) window.CRDashboard.saveWorkspace("quicksave");
     });
@@ -1224,7 +1259,15 @@
       });
       document.getElementById("cp-cmd-place")?.addEventListener("click", () => {
         openTab("entities");
-        document.getElementById("quick-entity-place")?.click();
+        if (typeof window.startI2EntityPlacement === "function") {
+          const categories = Object.keys(window.ICON_CATEGORIES || {});
+          if (categories.length) {
+            window.startI2EntityPlacement(categories[0]);
+            window.showToast?.("Select a map point to place the new entity", "info");
+            return;
+          }
+        }
+        document.getElementById("entity-category")?.focus();
       });
       document.getElementById("cp-cmd-crime")?.addEventListener("click", () => {
         openTab("layers");
@@ -1233,6 +1276,59 @@
       document.getElementById("cp-cmd-layers")?.addEventListener("click", () => {
         openTab("layers");
       });
+    })();
+    // Search source categories
+    (function wireSearchSourceTabs() {
+      const paneRoot = document.getElementById("tab-search");
+      if (!paneRoot) return;
+      const tabs = Array.from(paneRoot.querySelectorAll(".ops-source-tab"));
+      const panes = Array.from(paneRoot.querySelectorAll(".ops-source-pane"));
+      if (!tabs.length || !panes.length) return;
+      let activeKey = "companies";
+
+      const focusByPane = {
+        companies: "ch_name",
+        people: "psc_name",
+        land: "lr-postcode",
+        disqualified: "dq-name",
+        charity: "charity-name",
+        mostwanted: "mostwanted-name",
+        sanvessel: "sanvessel-name",
+        vehicle: "dvla-vrm-input",
+      };
+
+      function activate(key, shouldFocus) {
+        const target = String(key || "").trim();
+        activeKey = target || "";
+        tabs.forEach((btn) => {
+          btn.classList.toggle("active", btn.getAttribute("data-ops-tab") === target);
+        });
+        panes.forEach((pane) => {
+          pane.classList.toggle("active", pane.getAttribute("data-ops-pane") === target);
+        });
+        if (shouldFocus) {
+          const id = focusByPane[target];
+          if (id) document.getElementById(id)?.focus();
+        }
+      }
+
+      function collapseAll() {
+        activeKey = "";
+        tabs.forEach((btn) => btn.classList.remove("active"));
+        panes.forEach((pane) => pane.classList.remove("active"));
+      }
+
+      tabs.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const key = btn.getAttribute("data-ops-tab");
+          if (key && key === activeKey) {
+            collapseAll();
+            return;
+          }
+          activate(key, true);
+        });
+      });
+      activate("companies", false);
     })();
     // Wire Land Registry search
     document.getElementById("lr-search-btn")?.addEventListener("click", async () => {
@@ -1277,6 +1373,1263 @@
         ${r.activities ? `<div class="ch-r-detail">${r.activities.slice(0,120)}</div>` : ""}
       </div>`).join("");
     });
+
+    // Wire local NCA Most Wanted search
+    (function wireMostWantedSearch() {
+      const qInput = document.getElementById("mostwanted-name");
+      const searchBtn = document.getElementById("mostwanted-search-btn");
+      const clearBtn = document.getElementById("mostwanted-clear-btn");
+      const metaEl = document.getElementById("mostwanted-meta");
+      const resultsEl = document.getElementById("mostwanted-results");
+      const sidePanelEl = document.getElementById("mostwanted-side-panel");
+      const sideMetaEl = document.getElementById("mostwanted-side-meta");
+      const sideResultsEl = document.getElementById("mostwanted-side-results");
+      const sideCloseBtn = document.getElementById("mostwanted-side-close");
+
+      let dataset = null;
+      let loadingPromise = null;
+      let inputTimer = null;
+      const mostWantedTownCache = new Map();
+      const SMALL_DATASET_MAX = 50;
+      const MW_MONTH_WORDS = new Set([
+        "january", "february", "march", "april", "may", "june",
+        "july", "august", "september", "october", "november", "december"
+      ]);
+      const MW_NON_PLACE_WORDS = new Set([
+        "operation", "proceeds", "crime", "class", "cash", "control", "retention",
+        "acquisition", "property", "police", "court", "bail", "fraud", "drugs",
+        "heroin", "cocaine", "cannabis", "offence", "offences"
+      ]);
+
+      function setSidePanelOpen(open) {
+        if (!sidePanelEl) return;
+        sidePanelEl.classList.toggle("hidden", !open);
+      }
+
+      function syncSideMeta(text) {
+        if (sideMetaEl) sideMetaEl.textContent = String(text || "");
+      }
+
+      function normalizeText(value) {
+        return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+      }
+
+      function esc(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function flattenValue(value, out, limit = 120) {
+        if (out.length >= limit || value == null) return;
+        if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+          const s = String(value).trim();
+          if (s) out.push(s);
+          return;
+        }
+        if (Array.isArray(value)) {
+          for (const item of value) {
+            flattenValue(item, out, limit);
+            if (out.length >= limit) break;
+          }
+          return;
+        }
+        if (typeof value === "object") {
+          for (const v of Object.values(value)) {
+            flattenValue(v, out, limit);
+            if (out.length >= limit) break;
+          }
+        }
+      }
+
+      function parseJsonl(text) {
+        const rows = [];
+        for (const raw of String(text || "").split(/\r?\n/)) {
+          const line = raw.trim();
+          if (!line) continue;
+          try {
+            rows.push(JSON.parse(line));
+          } catch (_) {
+            // ignore malformed lines
+          }
+        }
+        return rows;
+      }
+
+      function normalizeRecord(raw) {
+        const props = raw && typeof raw.properties === "object" ? raw.properties : {};
+        const name = raw?.caption || raw?.name || props?.name?.[0] || "Unknown";
+        const notes = Array.isArray(props?.notes) ? props.notes : (props?.notes ? [String(props.notes)] : []);
+        const aliases = [];
+        for (const key of ["alias", "aliases"]) {
+          const v = props?.[key];
+          if (Array.isArray(v)) aliases.push(...v);
+          else if (typeof v === "string") aliases.push(v);
+        }
+        const fields = [];
+        flattenValue(raw, fields, 160);
+        return {
+          id: String(raw?.id || ""),
+          name: String(name || "Unknown"),
+          notes: notes.map(x => String(x)),
+          aliases: aliases.map(x => String(x)),
+          url: String(props?.sourceUrl?.[0] || props?.sourceUrl || ""),
+          snippet: fields.join(" | ").slice(0, 320),
+          _search: normalizeText(fields.join(" ")),
+          _raw: raw,
+        };
+      }
+
+      async function loadDataset() {
+        if (Array.isArray(dataset)) return dataset;
+        if (loadingPromise) return loadingPromise;
+        const candidates = [
+          "/data/watchlists/UK NCA Most Wanted.jsonl",
+          "/data/watchlists/UK NCA Most Wanted.json",
+        ];
+        loadingPromise = (async () => {
+          for (const path of candidates) {
+            try {
+              const resp = await fetch(path, { headers: { Accept: "application/json,text/plain" } });
+              if (!resp.ok) continue;
+              const text = await resp.text();
+              const rows = parseJsonl(text).map(normalizeRecord).filter(r => r._search);
+              if (rows.length) {
+                dataset = rows;
+                if (metaEl) {
+                  metaEl.textContent = `${rows.length.toLocaleString()} records ready`;
+                }
+                return rows;
+              }
+            } catch (_) {
+              // try next path
+            }
+          }
+          dataset = [];
+          if (metaEl) metaEl.textContent = "Dataset unavailable";
+          return dataset;
+        })();
+        return loadingPromise;
+      }
+
+      function scoreMatch(row, qNorm, tokens) {
+        if (!qNorm || !row?._search) return -1;
+        if (row._search.includes(qNorm)) return 3;
+        if (tokens.length && tokens.every(t => row._search.includes(t))) return 2;
+        return -1;
+      }
+
+      function buildMostWantedI2EntityData(row, options = {}) {
+        const raw = row && typeof row._raw === "object" ? row._raw : {};
+        const nameParts = splitPersonName(row?.name || "");
+        const insights = options.insights || {};
+        const values = [];
+        const push = (propertyName, value) => {
+          const v = String(value || "").trim();
+          if (!v) return;
+          values.push({ propertyName, value: v });
+        };
+
+        // Align with existing person/officer i2 profile fields so edit/view flows remain consistent.
+        push("Full Name", row.name);
+        push("First Name", nameParts.firstName);
+        push("Surname", nameParts.surname);
+        push("Role", "Most Wanted");
+        push("Date of Birth", options.dobValue || metadataValue(raw, "dob"));
+        push("Age", options.ageValue || "");
+        push("Nationality", metadataValue(raw, "nationality"));
+        push("Country of Residence", metadataValue(raw, "countryOfResidence"));
+        push("Gender", metadataValue(raw, "gender"));
+        push("Ethnicity", metadataValue(raw, "ethnicity"));
+        push("Hair Color", metadataValue(raw, "hairColor"));
+        push("Height", metadataValue(raw, "height"));
+        push("Address String", options.locationLabel || "");
+        push("Alias", options.aliasesValue || (Array.isArray(row.aliases) ? row.aliases.join(", ") : ""));
+        push("Criminality", insights.criminality || "");
+        push("Timeline", insights.yearSpans || "");
+        push("Victims", insights.victimCount || "");
+        push("Financial Detail", insights.moneyMentions || "");
+        push("Topics", metadataValue(raw, "topics"));
+        push("Most Wanted ID", row.id);
+        push("UID", row.id);
+        push("Source URL", row.url || "");
+        push("Dataset", "UK NCA Most Wanted");
+        push("Notes", Array.isArray(row.notes) && row.notes.length ? row.notes.join(" | ") : (row.snippet || ""));
+
+        return {
+          entityType: "Person",
+          entityName: "Person",
+          entityId: "ET5",
+          values
+        };
+      }
+
+      function mapCenterLatLng() {
+        if (window._map && typeof window._map.getCenter === "function") {
+          const c = window._map.getCenter();
+          return [Number(c.lat), Number(c.lng)];
+        }
+        return [51.5074, -0.1278];
+      }
+
+      function londonLatLng() {
+        return [51.5074, -0.1278];
+      }
+
+      function inferMostWantedAddressPreview(row) {
+        const raw = row && typeof row._raw === "object" ? row._raw : {};
+        const explicitAddress = metadataValue(raw, "address");
+        if (explicitAddress) return explicitAddress;
+        const places = collectUkTownCandidates(row);
+        if (!places.length) return "";
+        return `${places[0]}, UK`;
+      }
+
+      function buildMostWantedPrimaryDetails(row) {
+        const raw = row && typeof row._raw === "object" ? row._raw : {};
+        const details = [];
+        const add = (label, value) => {
+          const text = String(value || "").trim();
+          if (!text) return;
+          details.push({ label, value: text });
+        };
+
+        add("Gender", metadataValue(raw, "gender"));
+        add("Ethnicity", metadataValue(raw, "ethnicity"));
+        add("Hair", metadataValue(raw, "hairColor"));
+        add("Height", metadataValue(raw, "height"));
+        add("Address", inferMostWantedAddressPreview(row));
+
+        return details;
+      }
+
+      function renderRows(rows, modeLabel = "") {
+        if (!sideResultsEl) return;
+        if (!rows.length) {
+          sideResultsEl.innerHTML = '<div class="nr-empty">No Most Wanted matches found.</div>';
+          setSidePanelOpen(true);
+          syncSideMeta(modeLabel || "No matching records.");
+          return;
+        }
+        sideResultsEl.innerHTML = rows.map(r => {
+          const insights = getMostWantedInsights(r);
+          const dobAge = buildMostWantedDobAgeLabel(r);
+          return `<div class="ch-result-item" data-mw-id="${esc(r.id)}">
+          <div class="ch-r-name" style="color:#f59e0b">${esc(r.name)}</div>
+          ${dobAge ? `<div class="ch-r-detail"><span class="popup-label">${esc(dobAge)}</span></div>` : ""}
+          ${buildMostWantedPrimaryDetails(r).map(d => `<div class="ch-r-detail"><span class="popup-label">${esc(d.label)}</span> ${esc(d.value)}</div>`).join("")}
+          ${r.aliases.length ? `<div class="ch-r-detail"><span class="popup-label">Aliases</span> ${esc(r.aliases.slice(0, 4).join(", "))}</div>` : ""}
+          ${insights.aliases.length ? `<div class="ch-r-detail"><span class="popup-label">Parsed Alias</span> ${esc(insights.aliases.slice(0, 4).join(", "))}</div>` : ""}
+          ${insights.criminality ? `<div class="ch-r-detail"><span class="popup-label">Criminality</span> ${esc(insights.criminality)}</div>` : ""}
+          ${insights.yearSpans ? `<div class="ch-r-detail"><span class="popup-label">Years</span> ${esc(insights.yearSpans)}</div>` : ""}
+          ${insights.victimCount ? `<div class="ch-r-detail"><span class="popup-label">Victims</span> ${esc(insights.victimCount)}</div>` : ""}
+          ${insights.moneyMentions ? `<div class="ch-r-detail"><span class="popup-label">Money</span> ${esc(insights.moneyMentions)}</div>` : ""}
+          ${r.notes.length ? `<div class="ch-r-detail"><span class="popup-label">Notes</span> ${esc(r.notes[0])}</div>` : `<div class="ch-r-detail"><span class="popup-label">Notes</span> ${esc(r.snippet)}</div>`}
+          ${r.url ? `<div class="ch-r-detail"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Source page</a></div>` : ""}
+          <div class="cp-btn-row" style="margin-top:6px">
+            <button type="button" class="btn-secondary btn-sm" data-mw-select="${esc(r.id)}">Select</button>
+            <button type="button" class="btn-primary btn-sm" data-mw-add="${esc(r.id)}">Add Person</button>
+          </div>
+        </div>`;
+        }).join("");
+        setSidePanelOpen(true);
+        syncSideMeta(modeLabel || `${rows.length} result(s)`);
+        if (resultsEl) {
+          resultsEl.innerHTML = '<div class="nr-empty">Results moved to the right panel for readability.</div>';
+        }
+      }
+
+      function metadataValue(raw, key) {
+        const props = raw && typeof raw.properties === "object" ? raw.properties : {};
+        const v = props[key];
+        if (Array.isArray(v)) return v.filter(Boolean).map(String).join(", ");
+        if (v == null) return "";
+        return String(v);
+      }
+
+      function splitPersonName(fullName) {
+        const name = String(fullName || "").trim();
+        if (!name) return { firstName: "", surname: "" };
+        const parts = name.split(/\s+/).filter(Boolean);
+        if (parts.length <= 1) return { firstName: name, surname: "" };
+        return {
+          firstName: parts[0],
+          surname: parts.slice(1).join(" ")
+        };
+      }
+
+      function extractAgeHint(text) {
+        const value = String(text || "");
+        if (!value) return null;
+        const patterns = [
+          /\b(?:he|she|they|[A-Z][a-z]+)\s+is\s+(?:around|about|approximately|approx\.?)?\s*(\d{1,2})\s*(?:years?\s*old|yrs?\s*old|yr\s*old|y\/o)\b/i,
+          /\baged\s+(\d{1,2})\b/i,
+          /\b(?:around|about|approximately|approx\.?)\s*(\d{1,2})\s*(?:years?\s*old|yrs?\s*old|yr\s*old|y\/o)\b/i
+        ];
+        for (const re of patterns) {
+          const m = value.match(re);
+          if (!m) continue;
+          const age = Number(m[1]);
+          if (Number.isFinite(age) && age >= 12 && age <= 100) return age;
+        }
+        return null;
+      }
+
+      function inferAgeFromMostWanted(row) {
+        const notes = Array.isArray(row?.notes) ? row.notes : [];
+        for (const note of notes) {
+          const age = extractAgeHint(note);
+          if (age != null) return age;
+        }
+        return extractAgeHint(row?.snippet || "");
+      }
+
+      function estimateDobFromAge(age) {
+        if (!Number.isFinite(age)) return null;
+        const currentYear = new Date().getFullYear();
+        const fromYear = currentYear - age - 1;
+        const toYear = currentYear - age;
+        if (!Number.isFinite(fromYear) || !Number.isFinite(toYear)) return null;
+        return {
+          range: `${fromYear}-${toYear}`,
+          label: `${fromYear}-${toYear} (estimated from age ${age})`
+        };
+      }
+
+      function extractAllMatches(text, regex, groupIndex = 1) {
+        const out = [];
+        if (!text || !(regex instanceof RegExp)) return out;
+        const source = String(text);
+        const flags = regex.flags.includes("g") ? regex.flags : `${regex.flags}g`;
+        const re = new RegExp(regex.source, flags);
+        let m = null;
+        while ((m = re.exec(source))) {
+          const val = String(m[groupIndex] || "").trim();
+          if (val) out.push(val);
+        }
+        return out;
+      }
+
+      function extractMostWantedInsights(row) {
+        const notesText = Array.isArray(row?.notes) && row.notes.length
+          ? row.notes.join(" | ")
+          : String(row?.snippet || "");
+        const text = String(notesText || "");
+        if (!text) return { aliases: [], criminality: "", yearSpans: "", victimCount: "", moneyMentions: "" };
+
+        const aliases = [];
+        aliases.push(...extractAllMatches(text, /\balias(?:es)?\s+(?:of\s+)?['"]?([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){0,5})['"]?/i));
+        aliases.push(...extractAllMatches(text, /\b(?:also known as|known as|nickname)\s+['"]?([A-Z][A-Za-z'’\-]+(?:\s+[A-Z][A-Za-z'’\-]+){0,5})['"]?/i));
+
+        const lower = text.toLowerCase();
+        const criminalityMap = [
+          ["fraud", "Fraud"],
+          ["murder", "Murder"],
+          ["rape", "Rape"],
+          ["wounding", "Wounding"],
+          ["assault", "Assault"],
+          ["heroin", "Drug Offence"],
+          ["cocaine", "Drug Offence"],
+          ["cannabis", "Drug Offence"],
+          ["diamorphine", "Drug Offence"],
+          ["supply class a", "Drug Supply"],
+          ["money laundering", "Money Laundering"],
+          ["proceeds of crime", "Money Laundering"],
+          ["insider dealing", "Insider Dealing"],
+          ["dangerous driving", "Dangerous Driving"],
+          ["conspiracy", "Conspiracy"],
+          ["theft", "Theft"]
+        ];
+        const criminality = uniqueStrings(
+          criminalityMap.filter(([k]) => lower.includes(k)).map(([, v]) => v)
+        ).join(", ");
+
+        const yearSpanMatches = [
+          ...extractAllMatches(text, /\b((?:19|20)\d{2}\s*(?:-|to|and)\s*(?:19|20)\d{2})\b/i),
+          ...extractAllMatches(text, /\bbetween\s+((?:19|20)\d{2}\s+and\s+(?:19|20)\d{2})\b/i)
+        ];
+        const yearSpans = uniqueStrings(yearSpanMatches).join(", ");
+
+        const victimCountMatch = text.match(/\b(\d{1,3}(?:,\d{3})+|\d+)\s+people\b/i);
+        const victimCount = victimCountMatch ? victimCountMatch[1] : "";
+
+        const moneyMentions = uniqueStrings(
+          extractAllMatches(text, /([£€$]\s?\d[\d,]*(?:\.\d+)?\s*(?:million|billion|bn|k|thousand)?)/i)
+        ).join(", ");
+
+        return { aliases: uniqueStrings(aliases), criminality, yearSpans, victimCount, moneyMentions };
+      }
+
+      const mostWantedInsightsCache = new Map();
+      function getMostWantedInsights(row) {
+        const key = String(row?.id || "");
+        if (key && mostWantedInsightsCache.has(key)) return mostWantedInsightsCache.get(key);
+        const insights = extractMostWantedInsights(row);
+        if (key) mostWantedInsightsCache.set(key, insights);
+        return insights;
+      }
+
+      function buildMostWantedDobAgeLabel(row) {
+        const raw = row && typeof row._raw === "object" ? row._raw : {};
+        const dob = metadataValue(raw, "dob");
+        if (dob) return `DOB ${dob}`;
+        const age = inferAgeFromMostWanted(row);
+        if (age != null) return `Age ${age}`;
+        return "";
+      }
+
+      function offsetLatLng(origin, index = 0) {
+        const base = Array.isArray(origin) && origin.length >= 2 ? origin : londonLatLng();
+        const angle = (index % 8) * (Math.PI / 4);
+        const radius = 0.002 + (Math.floor(index / 8) * 0.0012);
+        return [
+          Number(base[0]) + Math.sin(angle) * radius,
+          Number(base[1]) + Math.cos(angle) * radius
+        ];
+      }
+
+      function parseVictimMentions(text, suspectName = "") {
+        const out = [];
+        const source = String(text || "");
+        if (!source) return out;
+        const selfKey = normalizeText(suspectName || "");
+        const seen = new Set();
+        const pushVictim = (nameRaw, yearRaw = "") => {
+          const name = String(nameRaw || "").trim();
+          const year = String(yearRaw || "").trim();
+          const key = normalizeText(name);
+          if (!name || key === selfKey || seen.has(key)) return;
+          seen.add(key);
+          out.push({ name, year, relation: year ? `Murdered (${year})` : "Murdered" });
+        };
+
+        const patterns = [
+          // "murder of Thomas Cameron on 28 June 2007"
+          /\bmurder(?:ed)?\s+(?:of|involving)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})(?:\s+on\s+\d{1,2}\s+[A-Z][a-z]+\s+((?:19|20)\d{2}))?/gi,
+          // "murders of Liam Kelly in 2004"
+          /\bmurders?\s+of\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})(?:\s+in\s+((?:19|20)\d{2}))?/gi,
+          // legacy fallback: "Thomas Cameron in 2007"
+          /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\s+in\s+((?:19|20)\d{2})\b/g
+        ];
+
+        patterns.forEach((re) => {
+          let match = null;
+          while ((match = re.exec(source))) {
+            pushVictim(match[1], match[2]);
+          }
+        });
+
+        return out;
+      }
+
+      function parseCommodityMentions(text) {
+        const source = String(text || "").toLowerCase();
+        if (!source) return [];
+        const keywords = [
+          "heroin", "cocaine", "cannabis", "diamorphine", "mdma", "lsd", "diazepam",
+          "class a drugs", "drugs"
+        ];
+        return uniqueStrings(keywords.filter((k) => source.includes(k)).map((k) => {
+          if (k === "class a drugs") return "Class A Drugs";
+          if (k === "mdma") return "MDMA";
+          if (k === "lsd") return "LSD";
+          return k.charAt(0).toUpperCase() + k.slice(1);
+        }));
+      }
+
+      function ensurePersonEntityByName(name, latLng, sourceInfo) {
+        if (!window.EntityStore || !window.EntityRenderer) return null;
+        const targetName = String(name || "").trim();
+        if (!targetName) return null;
+        const existing = (window.EntityStore.getAll?.() || []).find((e) => {
+          if (e?.type !== "person") return false;
+          const full = String(e?.attributes?.fullName || e?.label || "");
+          return normalizeText(full) === normalizeText(targetName);
+        });
+        if (existing?.id) return existing.id;
+
+        return window.EntityRenderer.placeEntityViaStore(
+          "person",
+          targetName,
+          latLng,
+          {
+            sourceType: "most_wanted_notes",
+            fullName: targetName,
+            notes: "Auto-created from Most Wanted notes"
+          },
+          sourceInfo || { method: "most_wanted_notes", confidence: "low" },
+          {
+            entityType: "Person",
+            entityName: "Person",
+            entityId: "ET5",
+            values: [{ propertyName: "Full Name", value: targetName }]
+          },
+          "gfx/map_icons/people/man.png"
+        );
+      }
+
+      function ensureEventEntity(label, latLng, attributes, sourceInfo) {
+        if (!window.EntityStore || !window.EntityRenderer) return null;
+        const targetLabel = String(label || "").trim();
+        if (!targetLabel) return null;
+        const existing = (window.EntityStore.getAll?.() || []).find((e) => {
+          if (e?.type !== "event") return false;
+          return normalizeText(String(e?.label || "")) === normalizeText(targetLabel);
+        });
+        if (existing?.id) return existing.id;
+
+        return window.EntityRenderer.placeEntityViaStore(
+          "event",
+          targetLabel,
+          latLng,
+          attributes || {},
+          sourceInfo || { method: "most_wanted_notes", confidence: "low" },
+          null,
+          "danger"
+        );
+      }
+
+      function ensureRelationship(fromId, toId, label, type = "linked_to") {
+        if (!window.EntityStore || !fromId || !toId) return null;
+        const rels = window.EntityStore.getRelationshipsFor?.(fromId) || [];
+        const exists = rels.some((r) => {
+          const sameDirection = (r.fromId === fromId && r.toId === toId) || (r.fromId === toId && r.toId === fromId);
+          return sameDirection && normalizeText(r.label || "") === normalizeText(label || "");
+        });
+        if (exists) return null;
+        return window.EntityStore.addRelationship({
+          type,
+          fromId,
+          toId,
+          label: String(label || "").trim() || undefined,
+          source: { method: "most_wanted_notes", confidence: "low" }
+        });
+      }
+
+      function addDerivedEntitiesFromNotes(mainEntityId, row, baseLatLng) {
+        if (!mainEntityId || !row) return;
+        const text = Array.isArray(row.notes) && row.notes.length ? row.notes.join(" | ") : String(row.snippet || "");
+        const sourceInfo = { method: "most_wanted_notes", confidence: "low" };
+
+        const victims = parseVictimMentions(text, row.name);
+        victims.forEach((v, idx) => {
+          const victimId = ensurePersonEntityByName(v.name, offsetLatLng(baseLatLng, idx + 1), sourceInfo);
+          if (victimId) ensureRelationship(mainEntityId, victimId, v.relation || "Associated with", "associated_with");
+        });
+
+        const commodities = parseCommodityMentions(text);
+        commodities.forEach((commodity, idx) => {
+          const evId = ensureEventEntity(
+            `Commodity: ${commodity}`,
+            offsetLatLng(baseLatLng, 20 + idx),
+            {
+              sourceType: "most_wanted_notes",
+              type: "Commodity",
+              subtype: "commodity",
+              description: commodity
+            },
+            sourceInfo
+          );
+          if (evId) ensureRelationship(mainEntityId, evId, `Commodity: ${commodity}`, "linked_to");
+        });
+      }
+
+      function uniqueStrings(values) {
+        const seen = new Set();
+        const out = [];
+        for (const value of values || []) {
+          const v = String(value || "").trim();
+          if (!v) continue;
+          const key = v.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(v);
+        }
+        return out;
+      }
+
+      function extractLikelyUkPlaces(text) {
+        const value = String(text || "");
+        if (!value) return [];
+        const stopwords = new Set([
+          "the", "and", "or", "for", "with", "without", "against", "wanted",
+          "majorca", "madrid", "spain", "serbia", "india", "iraq", "turkish", "cypriot",
+          "uk", "united", "kingdom", "england", "scotland", "wales", "ireland", "channel"
+        ]);
+        const out = [];
+        const patterns = [
+          /\b(?:in|at|near|around|from)\s+([A-Z][a-z]+(?:[\s-][A-Z][a-z]+){0,2})/g,
+          /\b(?:born in|murders in|links to|area when he crashed in)\s+([A-Z][a-z]+(?:[\s-][A-Z][a-z]+){0,2})/g
+        ];
+        for (const re of patterns) {
+          let match = null;
+          while ((match = re.exec(value))) {
+            const candidate = String(match[1] || "").replace(/^[\s,.;:'"()\-]+|[\s,.;:'"()\-]+$/g, "").trim();
+            if (!candidate || /\d/.test(candidate)) continue;
+            const tokens = candidate.toLowerCase().split(/[\s-]+/).filter(Boolean);
+            if (!tokens.length || tokens.every(t => stopwords.has(t))) continue;
+            if (tokens.some(t => stopwords.has(t)) && tokens.length === 1) continue;
+            if (tokens.some(t => MW_MONTH_WORDS.has(t))) continue;
+            if (tokens.every(t => MW_NON_PLACE_WORDS.has(t))) continue;
+            out.push(candidate);
+          }
+        }
+        return uniqueStrings(out);
+      }
+
+      function collectUkTownCandidates(row) {
+        const notes = Array.isArray(row?.notes) ? row.notes : [];
+        const fromNotes = notes.flatMap(extractLikelyUkPlaces);
+        const fromSnippet = extractLikelyUkPlaces(row?.snippet || "");
+        return uniqueStrings([...fromNotes, ...fromSnippet]).slice(0, 8);
+      }
+
+      async function resolveMostWantedPlacement(row) {
+        const geocodeFn = (typeof window.geocodeAddress === "function")
+          ? window.geocodeAddress
+          : ((typeof globalThis.geocodeAddress === "function") ? globalThis.geocodeAddress : null);
+        if (!geocodeFn) return null;
+
+        const candidates = collectUkTownCandidates(row);
+        for (const town of candidates) {
+          const key = town.toLowerCase();
+          if (mostWantedTownCache.has(key)) {
+            const cached = mostWantedTownCache.get(key);
+            if (cached) return { ...cached, matchedTown: town };
+            continue;
+          }
+          let coords = null;
+          try {
+            coords = await geocodeFn(`${town}, United Kingdom`, { strict: false });
+          } catch (_) {
+            coords = null;
+          }
+          if (coords && Number.isFinite(coords.lat) && Number.isFinite(coords.lon)) {
+            const resolved = {
+              latLng: [Number(coords.lat), Number(coords.lon)],
+              locationLabel: `${town}, UK`
+            };
+            mostWantedTownCache.set(key, resolved);
+            return { ...resolved, matchedTown: town };
+          }
+          mostWantedTownCache.set(key, null);
+        }
+        return null;
+      }
+
+      async function addMostWantedToStore(recordId) {
+        const rows = await loadDataset();
+        const row = rows.find(r => String(r.id) === String(recordId));
+        if (!row) return;
+        if (!window.EntityStore || !window.EntityRenderer) {
+          if (typeof window.showToast === "function") window.showToast("Entity store is unavailable", "error", 2500);
+          return;
+        }
+
+        const existing = (window.EntityStore.getAll?.() || []).find((e) => {
+          const attrs = e?.attributes || {};
+          return String(attrs.mostWantedId || "") === String(row.id || "");
+        });
+        if (existing?.id) {
+          if (window._map && Array.isArray(existing.latLng)) {
+            window._map.panTo(existing.latLng);
+          }
+          if (typeof window.showToast === "function") {
+            window.showToast(`${row.name} already exists in entity store`, "info", 2200);
+          }
+          return;
+        }
+
+        const raw = row._raw || {};
+        const topics = metadataValue(raw, "topics");
+        const dob = metadataValue(raw, "dob");
+        const nationality = metadataValue(raw, "nationality");
+        const countryOfResidence = metadataValue(raw, "countryOfResidence");
+        const gender = metadataValue(raw, "gender");
+        const ethnicity = metadataValue(raw, "ethnicity");
+        const hairColor = metadataValue(raw, "hairColor");
+        const height = metadataValue(raw, "height");
+        const inferredAge = inferAgeFromMostWanted(row);
+        const estimatedDob = estimateDobFromAge(inferredAge);
+        const dobDisplay = String(dob || estimatedDob?.label || "");
+        const ageDisplay = inferredAge != null ? String(inferredAge) : "";
+        const insights = getMostWantedInsights(row);
+        const combinedAliases = uniqueStrings([...(row.aliases || []), ...(insights.aliases || [])]).join(", ");
+        const placement = await resolveMostWantedPlacement(row);
+        const locationLabel = String(placement?.locationLabel || "");
+        const i2EntityData = buildMostWantedI2EntityData(row, {
+          locationLabel,
+          dobValue: dobDisplay,
+          ageValue: ageDisplay,
+          aliasesValue: combinedAliases,
+          insights
+        });
+        const notesText = Array.isArray(row.notes) && row.notes.length ? row.notes.join(" | ") : (row.snippet || "");
+        const nameParts = splitPersonName(row.name);
+        const attributes = {
+          sourceType: "most_wanted",
+          fullName: row.name,
+          firstName: nameParts.firstName,
+          surname: nameParts.surname,
+          mostWantedId: String(row.id || ""),
+          aliases: combinedAliases,
+          topics: topics || "",
+          dob: dobDisplay,
+          ageEstimate: ageDisplay,
+          possibleDobYear: String(estimatedDob?.range || ""),
+          criminality: insights.criminality || "",
+          incidentYears: insights.yearSpans || "",
+          victimCount: insights.victimCount || "",
+          moneyMentions: insights.moneyMentions || "",
+          nationality: nationality || "",
+          countryOfResidence: countryOfResidence || "",
+          officerRole: "Most Wanted",
+          gender: gender || "",
+          ethnicity: ethnicity || "",
+          hairColor: hairColor || "",
+          height: height || "",
+          address: locationLabel,
+          lastKnownTown: String(placement?.matchedTown || ""),
+          notes: notesText,
+          sourceUrl: String(row.url || ""),
+          dataset: "UK NCA Most Wanted",
+          uid: String(row.id || "")
+        };
+        const entityId = window.EntityRenderer.placeEntityViaStore(
+          "person",
+          row.name,
+          Array.isArray(placement?.latLng) ? placement.latLng : londonLatLng(),
+          attributes,
+          { method: "most_wanted_local", confidence: "medium" },
+          i2EntityData,
+          "gfx/map_icons/people/man.png"
+        );
+        if (entityId) {
+          const anchor = Array.isArray(placement?.latLng) ? placement.latLng : londonLatLng();
+          addDerivedEntitiesFromNotes(entityId, row, anchor);
+        }
+        if (entityId && typeof window.showToast === "function") {
+          if (locationLabel) {
+            window.showToast(`Added ${row.name} near ${locationLabel}`, "success", 2400);
+          } else {
+            window.showToast(`Added ${row.name} to entity store`, "success", 2200);
+          }
+        }
+      }
+
+      async function runSearch() {
+        if (!resultsEl) return;
+        const q = String(qInput?.value || "").trim();
+        resultsEl.innerHTML = '<div class="mostwanted-status inline">Searching...</div>';
+        setSidePanelOpen(true);
+        syncSideMeta("Searching...");
+        if (sideResultsEl) sideResultsEl.innerHTML = '<div class="mostwanted-status inline">Searching...</div>';
+        const rows = await loadDataset();
+        if (!rows.length) {
+          resultsEl.innerHTML = '<div class="nr-empty">Most Wanted dataset unavailable.</div>';
+          if (sideResultsEl) sideResultsEl.innerHTML = '<div class="nr-empty">Most Wanted dataset unavailable.</div>';
+          syncSideMeta("Dataset unavailable");
+          return;
+        }
+        if (!q) {
+          if (rows.length <= SMALL_DATASET_MAX) {
+            renderRows(rows, `Select from ${rows.length} records or type to filter.`);
+          } else {
+            resultsEl.innerHTML = '<div class="nr-empty">Enter a search term.</div>';
+          }
+          return;
+        }
+        const qNorm = normalizeText(q);
+        const tokens = qNorm.split(/[^a-z0-9]+/).filter(Boolean);
+        const matched = rows
+          .map(row => ({ row, score: scoreMatch(row, qNorm, tokens) }))
+          .filter(x => x.score >= 0)
+          .sort((a, b) => (b.score - a.score) || a.row.name.localeCompare(b.row.name))
+          .slice(0, 50)
+          .map(x => x.row);
+
+        renderRows(matched, `Showing ${matched.length} result(s).`);
+      }
+
+      searchBtn?.addEventListener("click", runSearch);
+      clearBtn?.addEventListener("click", () => {
+        if (qInput) qInput.value = "";
+        runSearch();
+      });
+      sideCloseBtn?.addEventListener("click", () => {
+        setSidePanelOpen(false);
+      });
+      document.querySelectorAll(".ops-source-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const target = btn.getAttribute("data-ops-tab");
+          if (target !== "mostwanted") {
+            setSidePanelOpen(false);
+          } else if (String(sideResultsEl?.innerHTML || "").trim()) {
+            setSidePanelOpen(true);
+          }
+        });
+      });
+      qInput?.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        runSearch();
+      });
+      qInput?.addEventListener("input", () => {
+        if (inputTimer) clearTimeout(inputTimer);
+        inputTimer = setTimeout(() => {
+          runSearch();
+        }, 120);
+      });
+      qInput?.addEventListener("focus", () => {
+        if (!dataset && !loadingPromise) {
+          loadDataset().then(() => runSearch());
+          return;
+        }
+        if (!String(qInput?.value || "").trim()) runSearch();
+      });
+      sideResultsEl?.addEventListener("click", async (ev) => {
+        const t = ev.target;
+        if (!(t instanceof HTMLElement)) return;
+        const pickId = t.getAttribute("data-mw-select");
+        const addId = t.getAttribute("data-mw-add");
+        const id = pickId || addId;
+        if (!id) return;
+        const rows = await loadDataset();
+        const row = rows.find(r => String(r.id) === String(id));
+        if (!row) return;
+        if (pickId) {
+          if (qInput) qInput.value = row.name;
+          runSearch();
+          return;
+        }
+        if (addId) {
+          await addMostWantedToStore(id);
+        }
+      });
+    })();
+
+    // Wire local sanctioned vessels search
+    (function wireSanctionedVesselsSearch() {
+      const qInput = document.getElementById("sanvessel-name");
+      const searchBtn = document.getElementById("sanvessel-search-btn");
+      const clearBtn = document.getElementById("sanvessel-clear-btn");
+      const highlightBtn = document.getElementById("sanvessel-highlight-btn");
+      const metaEl = document.getElementById("sanvessel-meta");
+      const resultsEl = document.getElementById("sanvessel-results");
+
+      let dataset = null;
+      let loadingPromise = null;
+      let liveShipsPromise = null;
+      let liveShips = [];
+      let inputTimer = null;
+      let highlightEnabled = false;
+      const SMALL_DATASET_MAX = 50;
+
+      function syncHighlightButton() {
+        if (!highlightBtn) return;
+        highlightBtn.textContent = highlightEnabled ? "Clear AIS Highlight" : "Highlight Sanctioned On AIS";
+        highlightBtn.classList.toggle("btn-primary", highlightEnabled);
+        highlightBtn.classList.toggle("btn-secondary", !highlightEnabled);
+      }
+
+      function normalizeText(value) {
+        return String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
+      }
+
+      function esc(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function parseCsvRow(line) {
+        const out = [];
+        let cur = "";
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+          const ch = line[i];
+          const next = line[i + 1];
+          if (ch === '"') {
+            if (inQuotes && next === '"') {
+              cur += '"';
+              i++;
+              continue;
+            }
+            inQuotes = !inQuotes;
+            continue;
+          }
+          if (ch === "," && !inQuotes) {
+            out.push(cur);
+            cur = "";
+            continue;
+          }
+          cur += ch;
+        }
+        out.push(cur);
+        return out.map((v) => String(v || "").trim());
+      }
+
+      function parseCsvText(text) {
+        const lines = String(text || "").split(/\r?\n/).filter((x) => String(x || "").trim());
+        if (!lines.length) return [];
+        const headers = parseCsvRow(lines[0]).map((h) => normalizeText(h));
+        const rows = [];
+        for (let i = 1; i < lines.length; i++) {
+          const cols = parseCsvRow(lines[i]);
+          if (!cols.length) continue;
+          const obj = {};
+          headers.forEach((h, idx) => {
+            obj[h] = String(cols[idx] || "").trim();
+          });
+          rows.push(obj);
+        }
+        return rows;
+      }
+
+      function normalizeVesselRecord(raw) {
+        const name = raw.caption || raw.name || "";
+        const aliasesRaw = String(raw.aliases || "");
+        const aliases = aliasesRaw
+          ? aliasesRaw.split(/[|;,]/).map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const risk = String(raw.risk || "");
+        const countries = String(raw.countries || "");
+        const flag = String(raw.flag || "");
+        const imo = String(raw.imo || "").replace(/^IMO/i, "").trim();
+        const mmsi = String(raw.mmsi || "").trim();
+        const datasets = String(raw.datasets || "");
+        const url = String(raw.url || "");
+        const id = String(raw.id || "");
+        const searchBlob = [
+          name, aliases.join(" "), risk, countries, flag, imo, mmsi, datasets, id
+        ].join(" ");
+        return {
+          id,
+          name: name || "Unknown Vessel",
+          aliases,
+          risk,
+          countries,
+          flag,
+          imo,
+          mmsi,
+          datasets,
+          url,
+          _raw: raw,
+          _search: normalizeText(searchBlob)
+        };
+      }
+
+      async function loadDataset() {
+        if (Array.isArray(dataset)) return dataset;
+        if (loadingPromise) return loadingPromise;
+        const path = "/data/watchlists/maritime.csv";
+        loadingPromise = (async () => {
+          try {
+            const resp = await fetch(path, { headers: { Accept: "text/csv,text/plain,*/*" } });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const text = await resp.text();
+            dataset = parseCsvText(text).map(normalizeVesselRecord).filter((r) => r._search);
+            if (metaEl) metaEl.textContent = `${dataset.length.toLocaleString()} records ready`;
+            return dataset;
+          } catch (_) {
+            dataset = [];
+            if (metaEl) metaEl.textContent = "Dataset unavailable";
+            return dataset;
+          }
+        })();
+        return loadingPromise;
+      }
+
+      async function loadLiveShips() {
+        if (Array.isArray(liveShips) && liveShips.length) return liveShips;
+        if (liveShipsPromise) return liveShipsPromise;
+        liveShipsPromise = (async () => {
+          try {
+            const resp = await fetch("/data/live/ships_live.json", { headers: { Accept: "application/json" } });
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const rows = await resp.json();
+            liveShips = Array.isArray(rows) ? rows : [];
+            return liveShips;
+          } catch (_) {
+            liveShips = [];
+            return liveShips;
+          }
+        })();
+        return liveShipsPromise;
+      }
+
+      function normalizeShipNumber(value) {
+        return String(value || "").replace(/^IMO/i, "").replace(/\D/g, "");
+      }
+
+      function liveShipMatchForVessel(row) {
+        if (!Array.isArray(liveShips) || !liveShips.length) return null;
+        const wantedMmsi = normalizeShipNumber(row?.mmsi);
+        const wantedImo = normalizeShipNumber(row?.imo);
+        const wantedName = normalizeText(row?.name);
+
+        let hit = null;
+        if (wantedMmsi) {
+          hit = liveShips.find((s) => normalizeShipNumber(s?.mmsi) === wantedMmsi);
+          if (hit) return hit;
+        }
+        if (wantedImo) {
+          hit = liveShips.find((s) => normalizeShipNumber(s?.imo) === wantedImo);
+          if (hit) return hit;
+        }
+        if (wantedName) {
+          hit = liveShips.find((s) => normalizeText(s?.name || s?.shipName || "") === wantedName);
+          if (hit) return hit;
+        }
+        return null;
+      }
+
+      function scoreMatch(row, qNorm, tokens) {
+        if (!qNorm || !row?._search) return -1;
+        if (row._search.includes(qNorm)) return 3;
+        if (tokens.length && tokens.every(t => row._search.includes(t))) return 2;
+        return -1;
+      }
+
+      function buildVesselI2EntityData(row) {
+        const values = [];
+        const push = (propertyName, value) => {
+          const v = String(value || "").trim();
+          if (!v) return;
+          values.push({ propertyName, value: v });
+        };
+        push("Name", row.name);
+        push("IMO", row.imo ? `IMO${row.imo}` : "");
+        push("MMSI", row.mmsi);
+        push("Type", "Sanctioned Vessel");
+        push("Flag", row.flag);
+        push("Country", row.countries);
+        push("Risk", row.risk);
+        push("Dataset", row.datasets);
+        push("Source URL", row.url);
+        push("UID", row.id);
+        return {
+          entityType: "Vessel",
+          entityName: "Vessel",
+          entityId: "ET24",
+          values
+        };
+      }
+
+      function londonLatLng() {
+        return [51.5074, -0.1278];
+      }
+
+      function renderRows(rows, modeLabel = "") {
+        if (!resultsEl) return;
+        if (!rows.length) {
+          resultsEl.innerHTML = '<div class="nr-empty">No sanctioned vessels found.</div>';
+          return;
+        }
+        const labelHtml = modeLabel ? `<div class="mostwanted-status inline">${esc(modeLabel)}</div>` : "";
+        resultsEl.innerHTML = labelHtml + rows.map(r => {
+          const live = liveShipMatchForVessel(r);
+          const liveLat = Number(live?.lat);
+          const liveLon = Number(live?.lon);
+          const liveOk = Number.isFinite(liveLat) && Number.isFinite(liveLon);
+          const speed = Number.isFinite(Number(live?.speed)) ? Number(live.speed) : null;
+          const heading = Number.isFinite(Number(live?.heading)) ? Number(live.heading) : null;
+          return `<div class="ch-result-item" data-sv-id="${esc(r.id)}">
+          <div class="ch-r-name" style="color:#38bdf8">${esc(r.name)}</div>
+          ${liveOk ? `<div class="ch-r-detail"><span class="popup-label">Live AIS</span> Matched (${liveLat.toFixed(3)}, ${liveLon.toFixed(3)})</div>` : ""}
+          ${liveOk && speed != null ? `<div class="ch-r-detail"><span class="popup-label">Live Speed</span> ${esc(speed)} kn</div>` : ""}
+          ${liveOk && heading != null ? `<div class="ch-r-detail"><span class="popup-label">Live Heading</span> ${esc(heading)}°</div>` : ""}
+          ${r.imo ? `<div class="ch-r-detail"><span class="popup-label">IMO</span> IMO${esc(r.imo)}</div>` : ""}
+          ${r.mmsi ? `<div class="ch-r-detail"><span class="popup-label">MMSI</span> ${esc(r.mmsi)}</div>` : ""}
+          ${r.flag ? `<div class="ch-r-detail"><span class="popup-label">Flag</span> ${esc(r.flag.toUpperCase())}</div>` : ""}
+          ${r.countries ? `<div class="ch-r-detail"><span class="popup-label">Countries</span> ${esc(r.countries.toUpperCase())}</div>` : ""}
+          ${r.risk ? `<div class="ch-r-detail"><span class="popup-label">Risk</span> ${esc(r.risk)}</div>` : ""}
+          ${r.datasets ? `<div class="ch-r-detail"><span class="popup-label">Dataset</span> ${esc(r.datasets)}</div>` : ""}
+          ${r.url ? `<div class="ch-r-detail"><a href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">Source page</a></div>` : ""}
+          <div class="cp-btn-row" style="margin-top:6px">
+            <button type="button" class="btn-secondary btn-sm" data-sv-select="${esc(r.id)}">Select</button>
+            <button type="button" class="btn-primary btn-sm" data-sv-add="${esc(r.id)}">Add Vessel</button>
+            ${liveOk ? `<button type="button" class="btn-secondary btn-sm" data-sv-pan="${esc(r.id)}">Pan Live</button>` : ""}
+          </div>
+        </div>`;
+        }).join("");
+      }
+
+      async function addVesselToStore(recordId) {
+        const rows = await loadDataset();
+        const row = rows.find(r => String(r.id) === String(recordId));
+        if (!row) return;
+        await loadLiveShips();
+        const live = liveShipMatchForVessel(row);
+        const liveLat = Number(live?.lat);
+        const liveLon = Number(live?.lon);
+        const hasLiveCoords = Number.isFinite(liveLat) && Number.isFinite(liveLon);
+        if (!window.EntityStore || !window.EntityRenderer) {
+          if (typeof window.showToast === "function") window.showToast("Entity store is unavailable", "error", 2500);
+          return;
+        }
+
+        const existing = (window.EntityStore.getAll?.() || []).find((e) => {
+          const attrs = e?.attributes || {};
+          if (attrs.maritimeId && String(attrs.maritimeId) === String(row.id)) return true;
+          if (row.imo && attrs.imo && String(attrs.imo).replace(/^IMO/i, "") === String(row.imo)) return true;
+          if (row.mmsi && attrs.mmsi && String(attrs.mmsi) === String(row.mmsi)) return true;
+          return false;
+        });
+        if (existing?.id) {
+          if (window._map && Array.isArray(existing.latLng)) window._map.panTo(existing.latLng);
+          if (typeof window.showToast === "function") window.showToast(`${row.name} already exists`, "info", 2200);
+          return;
+        }
+
+        const attributes = {
+          sourceType: "sanctioned_vessel",
+          maritimeId: String(row.id || ""),
+          name: row.name,
+          imo: row.imo ? `IMO${row.imo}` : "",
+          mmsi: row.mmsi || "",
+          flag: row.flag || "",
+          countries: row.countries || "",
+          vesselType: "Sanctioned Vessel",
+          risk: row.risk || "",
+          aliases: row.aliases.join(", "),
+          dataset: row.datasets || "",
+          sourceUrl: row.url || "",
+          uid: String(row.id || ""),
+          notes: row.risk ? `Risk: ${row.risk}` : "",
+          liveMatched: hasLiveCoords ? "yes" : "",
+          liveMmsi: live?.mmsi ? String(live.mmsi) : "",
+          liveSpeed: Number.isFinite(Number(live?.speed)) ? String(live.speed) : "",
+          liveHeading: Number.isFinite(Number(live?.heading)) ? String(live.heading) : "",
+          liveDestination: live?.destination ? String(live.destination) : ""
+        };
+
+        const entityId = window.EntityRenderer.placeEntityViaStore(
+          "vessel",
+          row.name,
+          hasLiveCoords ? [liveLat, liveLon] : londonLatLng(),
+          attributes,
+          { method: hasLiveCoords ? "sanctioned_vessel_live_match" : "sanctioned_vessel_local", confidence: "medium" },
+          buildVesselI2EntityData(row),
+          null
+        );
+
+        if (entityId && typeof window.showToast === "function") {
+          if (hasLiveCoords) {
+            window.showToast(`Added live-matched vessel: ${row.name}`, "success", 2400);
+          } else {
+            window.showToast(`Added vessel: ${row.name}`, "success", 2200);
+          }
+        }
+      }
+
+      async function runSearch() {
+        if (!resultsEl) return;
+        const q = String(qInput?.value || "").trim();
+        resultsEl.innerHTML = '<div class="mostwanted-status inline">Searching...</div>';
+        const rows = await loadDataset();
+        await loadLiveShips();
+        if (!rows.length) {
+          resultsEl.innerHTML = '<div class="nr-empty">Sanctioned vessels dataset unavailable.</div>';
+          return;
+        }
+
+        if (!q) {
+          if (rows.length <= SMALL_DATASET_MAX) {
+            renderRows(rows, `Select from ${rows.length} records or type to filter.`);
+          } else {
+            resultsEl.innerHTML = '<div class="nr-empty">Enter a search term.</div>';
+          }
+          return;
+        }
+
+        const qNorm = normalizeText(q);
+        const tokens = qNorm.split(/[^a-z0-9]+/).filter(Boolean);
+        const matched = rows
+          .map(row => ({ row, score: scoreMatch(row, qNorm, tokens) }))
+          .filter(x => x.score >= 0)
+          .sort((a, b) => (b.score - a.score) || a.row.name.localeCompare(b.row.name))
+          .slice(0, 80)
+          .map(x => x.row);
+
+        renderRows(matched, `Showing ${matched.length} result(s).`);
+      }
+
+      searchBtn?.addEventListener("click", runSearch);
+      clearBtn?.addEventListener("click", () => {
+        if (qInput) qInput.value = "";
+        runSearch();
+      });
+      highlightBtn?.addEventListener("click", async () => {
+        highlightEnabled = !highlightEnabled;
+        syncHighlightButton();
+        try {
+          await window.ensureShipsLoaded?.();
+          await window.setAisSanctionHighlight?.(highlightEnabled);
+          if (typeof window.showToast === "function") {
+            window.showToast(
+              highlightEnabled ? "Sanctioned vessels highlighted on AIS" : "AIS sanction highlight cleared",
+              "info",
+              2000
+            );
+          }
+        } catch (_) {
+          if (typeof window.showToast === "function") window.showToast("Could not update AIS highlight", "error", 2200);
+        }
+      });
+      qInput?.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        runSearch();
+      });
+      qInput?.addEventListener("input", () => {
+        if (inputTimer) clearTimeout(inputTimer);
+        inputTimer = setTimeout(runSearch, 140);
+      });
+      qInput?.addEventListener("focus", () => {
+        if (!dataset && !loadingPromise) {
+          loadDataset().then(() => runSearch());
+          return;
+        }
+        if (!String(qInput?.value || "").trim()) runSearch();
+      });
+      resultsEl?.addEventListener("click", async (ev) => {
+        const t = ev.target;
+        if (!(t instanceof HTMLElement)) return;
+        const pickId = t.getAttribute("data-sv-select");
+        const addId = t.getAttribute("data-sv-add");
+        const panId = t.getAttribute("data-sv-pan");
+        const id = pickId || addId || panId;
+        if (!id) return;
+        const rows = await loadDataset();
+        const row = rows.find(r => String(r.id) === String(id));
+        if (!row) return;
+        if (pickId) {
+          if (qInput) qInput.value = row.name;
+          runSearch();
+          return;
+        }
+        if (addId) {
+          await addVesselToStore(id);
+          return;
+        }
+        if (panId) {
+          await loadLiveShips();
+          const live = liveShipMatchForVessel(row);
+          const lat = Number(live?.lat);
+          const lon = Number(live?.lon);
+          if (window._map && Number.isFinite(lat) && Number.isFinite(lon)) {
+            window._map.panTo([lat, lon]);
+            if (typeof window.showToast === "function") window.showToast(`Panned to live vessel position`, "info", 1800);
+          }
+        }
+      });
+      syncHighlightButton();
+    })();
 
     // ── Live Clock, Coords & Zoom in KPI bar ──
     (function initKpiLiveInfo() {

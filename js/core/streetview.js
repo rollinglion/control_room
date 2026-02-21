@@ -7,13 +7,12 @@
   var DEFAULT_FOV = 90;
   var DEFAULT_HEADING = 0;
   var DEFAULT_PITCH = 0;
+  var DEFAULT_RADIUS = 60;
 
-  // ── Get API key ──
   function _getApiKey() {
     return window.GOOGLE_STREETVIEW_API_KEY || window.GOOGLE_MAPS_API_KEY || "";
   }
 
-  // ── Check if Street View is configured ──
   function isConfigured() {
     return !!_getApiKey();
   }
@@ -23,12 +22,12 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
+      .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
   }
 
   function _isLocalHost() {
-    var host = String(window.location && window.location.hostname || "").toLowerCase();
+    var host = String((window.location && window.location.hostname) || "").toLowerCase();
     return host === "localhost" || host === "127.0.0.1" || host === "::1";
   }
 
@@ -48,25 +47,30 @@
     var dateStamp = _formatDateYYYYMMDD(new Date());
     var normalizedAddress = _normalizeAddressForFile(address);
     var base = dateStamp + " - Google Maps - " + normalizedAddress;
-    // Windows-safe filename while preserving requested visual format.
-    return base.replace(/[<>:"/\\|?*\x00-\x1F]/g, "").trim() + ".png";
+    return base.replace(/[<>:\"/\\|?*\x00-\x1F]/g, "").trim() + ".png";
   }
 
   function _buildStreetViewUrl(lat, lng, options, useProxyOnLocalhost, allowUnsigned) {
     var key = _getApiKey();
     if (!key && !allowUnsigned) return null;
+
     options = options || {};
     var size = options.size || DEFAULT_SIZE;
     var fov = options.fov || DEFAULT_FOV;
     var heading = options.heading != null ? options.heading : DEFAULT_HEADING;
     var pitch = options.pitch != null ? options.pitch : DEFAULT_PITCH;
+    var radius = options.radius != null ? options.radius : DEFAULT_RADIUS;
+    var source = options.source || "outdoor";
 
     var qs =
       "?size=" + encodeURIComponent(size) +
       "&location=" + encodeURIComponent(lat + "," + lng) +
       "&fov=" + encodeURIComponent(fov) +
       "&heading=" + encodeURIComponent(heading) +
-      "&pitch=" + encodeURIComponent(pitch);
+      "&pitch=" + encodeURIComponent(pitch) +
+      "&radius=" + encodeURIComponent(radius) +
+      "&source=" + encodeURIComponent(source);
+
     if (key) {
       qs += "&key=" + encodeURIComponent(key);
     }
@@ -76,33 +80,29 @@
     return "https://maps.googleapis.com/maps/api/streetview" + qs;
   }
 
-  // ── Build Street View Static API URL ──
   function getStaticUrl(lat, lng, options) {
-    // Keep proxy path for download/fetch workflows.
     return _buildStreetViewUrl(lat, lng, options, true, false);
   }
 
   function getDisplayUrl(lat, lng, options) {
-    // Use direct Google URL for popup/preview images so localhost proxy issues
-    // never suppress visual previews. Permit unsigned URL as resilience fallback.
     return _buildStreetViewUrl(lat, lng, options, false, true);
   }
 
-  // ── Check if Street View coverage exists at location ──
-  // Uses the metadata endpoint (free, no image served)
   async function hasStreetView(lat, lng) {
     var key = _getApiKey();
     if (!key) return false;
 
     var url = "https://maps.googleapis.com/maps/api/streetview/metadata" +
       "?location=" + encodeURIComponent(lat + "," + lng) +
+      "&radius=" + encodeURIComponent(DEFAULT_RADIUS) +
+      "&source=outdoor" +
       "&key=" + encodeURIComponent(key);
 
     try {
       var resp = await fetch(url);
       var data = await resp.json();
       return data.status === "OK";
-    } catch (e) {
+    } catch (_e) {
       return false;
     }
   }
@@ -110,20 +110,23 @@
   async function getStreetViewStatus(lat, lng) {
     var key = _getApiKey();
     if (!key) return { ok: false, status: "NO_KEY" };
+
     var url = "https://maps.googleapis.com/maps/api/streetview/metadata" +
       "?location=" + encodeURIComponent(lat + "," + lng) +
+      "&radius=" + encodeURIComponent(DEFAULT_RADIUS) +
+      "&source=outdoor" +
       "&key=" + encodeURIComponent(key);
+
     try {
       var resp = await fetch(url);
       var data = await resp.json();
-      var status = String(data?.status || "UNKNOWN");
+      var status = String((data && data.status) || "UNKNOWN");
       return { ok: status === "OK", status: status, data: data };
-    } catch (e) {
+    } catch (_e) {
       return { ok: false, status: "NETWORK_ERROR" };
     }
   }
 
-  // ── Render Street View thumbnail into container ──
   async function renderThumbnail(container, lat, lng, options) {
     if (!container) return;
     if (!isConfigured()) {
@@ -131,13 +134,23 @@
       return;
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      container.innerHTML = '';
+      container.innerHTML = "";
       return;
     }
 
     options = options || {};
     var size = options.size || "360x200";
-    var url = getStaticUrl(lat, lng, { size: size, fov: options.fov, heading: options.heading, pitch: options.pitch });
+    var imgOptions = {
+      size: size,
+      fov: options.fov,
+      heading: options.heading,
+      pitch: options.pitch,
+      radius: options.radius,
+      source: options.source || "outdoor"
+    };
+
+    var url = getDisplayUrl(lat, lng, imgOptions);
+    var fallbackUrl = getStaticUrl(lat, lng, imgOptions);
     if (!url) {
       container.innerHTML = '<div class="sv-unavailable">Street View unavailable</div>';
       return;
@@ -150,8 +163,9 @@
       else if (meta.status === "REQUEST_DENIED") msg = "Street View request denied (API key/referrer)";
       else if (meta.status === "OVER_QUERY_LIMIT") msg = "Street View quota exceeded";
       else if (meta.status === "INVALID_REQUEST") msg = "Street View request invalid";
-      if (meta?.data?.error_message) msg += ": " + _escapeHtml(meta.data.error_message);
-      container.innerHTML = '<div class="sv-unavailable">' + msg + '</div>';
+      else if (meta.status === "NETWORK_ERROR") msg = "Street View network error";
+      if (meta && meta.data && meta.data.error_message) msg += ": " + _escapeHtml(meta.data.error_message);
+      container.innerHTML = '<div class="sv-unavailable">' + msg + "</div>";
       return;
     }
 
@@ -162,9 +176,16 @@
     img.src = url;
     img.style.cursor = "pointer";
     img.title = "Click to open in Google Maps";
+    img.dataset.fallbackSrc = fallbackUrl || "";
+    img.dataset.fallbackTried = "0";
 
     img.onerror = function () {
-      container.innerHTML = '<div class="sv-unavailable">No Street View coverage</div>';
+      if (img.dataset.fallbackTried !== "1" && img.dataset.fallbackSrc) {
+        img.dataset.fallbackTried = "1";
+        img.src = img.dataset.fallbackSrc;
+        return;
+      }
+      container.innerHTML = '<div class="sv-unavailable">Street View image unavailable (coverage, key policy, or quota).</div>';
     };
 
     img.onclick = function () {
@@ -176,17 +197,25 @@
     container.appendChild(img);
   }
 
-  // ── Render larger Street View for inspector panel ──
   function renderInspectorView(container, lat, lng) {
-    renderThumbnail(container, lat, lng, { size: "640x300", fov: 80 });
+    renderThumbnail(container, lat, lng, { size: "640x300", fov: 80, radius: 90, source: "outdoor" });
   }
 
   async function downloadPng(lat, lng, options) {
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
     options = options || {};
     var size = options.size || "1280x720";
-    var url = getDisplayUrl(lat, lng, { size: size, fov: options.fov, heading: options.heading, pitch: options.pitch });
+    var url = getDisplayUrl(lat, lng, {
+      size: size,
+      fov: options.fov,
+      heading: options.heading,
+      pitch: options.pitch,
+      radius: options.radius,
+      source: options.source || "outdoor"
+    });
     if (!url) return;
+
     var address = String(options.addressString || options.address || "").trim();
     var filename = String(options.filename || _buildDownloadFilename(address));
 
@@ -213,7 +242,6 @@
       a.remove();
       setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 2000);
     } catch (_e) {
-      // Last resort: open source image in new tab if conversion/download fails.
       window.open(url, "_blank");
     }
   }
@@ -223,16 +251,18 @@
     window.open(mapsUrl, "_blank");
   }
 
-  // ── Add Street View to entity popup HTML ──
   function getPopupThumbnailHtml(lat, lng, options) {
     options = options || {};
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "";
+
     var mapsUrl = "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=" + lat + "," + lng;
     var encodedAddress = encodeURIComponent(String(options.addressString || options.address || ""));
-    var url = getDisplayUrl(lat, lng, { size: "300x150", fov: 90 });
+    var url = getDisplayUrl(lat, lng, { size: "300x150", fov: 90, radius: 90, source: "outdoor" });
+
     if (!url) {
       return '<a class="popup-psc-btn" href="' + mapsUrl + '" target="_blank" rel="noopener">Open in Google Maps</a>';
     }
+
     return (
       '<div class="sv-popup-wrap">' +
         '<img class="sv-popup-thumb" src="' + url + '" alt="Street View" loading="lazy" ' +
@@ -248,7 +278,6 @@
     );
   }
 
-  // ── Public API ──
   window.StreetView = {
     isConfigured: isConfigured,
     getStaticUrl: getStaticUrl,
@@ -261,5 +290,4 @@
     getDisplayUrl: getDisplayUrl,
     openMapsPano: openMapsPano
   };
-
 })();
