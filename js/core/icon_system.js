@@ -159,6 +159,14 @@
     // Check for icon override
     var overrideName = entity.iconOverride;
     if (overrideName) {
+      if (typeof overrideName === "string" && /\.(png|jpg|jpeg|webp|svg)(\?.*)?$/i.test(overrideName)) {
+        return L.icon({
+          iconUrl: overrideName,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14]
+        });
+      }
       var overrideSvg = await loadMakiSvg(overrideName);
       if (overrideSvg) return createMakiDivIcon(overrideSvg, color);
     }
@@ -194,7 +202,24 @@
     if (!typeDef) return createCircleFallback(entity.type || "location");
 
     var color = typeDef.color;
-    var makiName = typeDef.maki;
+    var overrideName = entity.iconOverride;
+    if (overrideName) {
+      if (typeof overrideName === "string" && /\.(png|jpg|jpeg|webp|svg)(\?.*)?$/i.test(overrideName)) {
+        return L.icon({
+          iconUrl: overrideName,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14]
+        });
+      }
+      if (_svgCache[overrideName]) {
+        return createMakiDivIcon(_svgCache[overrideName], color);
+      }
+    }
+
+    var subtype = entity.attributes && entity.attributes.subtype;
+    var subtypeKey = subtype ? (entity.type + "." + subtype) : null;
+    var makiName = (subtypeKey && ENTITY_SUBTYPE_ICONS[subtypeKey]) || typeDef.maki;
     if (makiName && _svgCache[makiName]) {
       return createMakiDivIcon(_svgCache[makiName], color);
     }

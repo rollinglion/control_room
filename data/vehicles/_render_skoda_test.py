@@ -2,6 +2,7 @@ import bpy
 import os
 import math
 import re
+import struct
 from pathlib import Path
 from mathutils import Vector
 
@@ -39,6 +40,7 @@ USE_CPU_WITH_GPU = os.environ.get("RENDER_USE_CPU_WITH_GPU", "0").strip() in {"1
 PREFERRED_BACKEND = os.environ.get("RENDER_BACKEND", "").strip().upper()
 RENDER_THREADS = int(os.environ.get("RENDER_THREADS", "0") or "0")
 RENDER_COLOR_VARIANTS = os.environ.get("RENDER_COLOR_VARIANTS", "").strip()
+ORPHAN_PURGE_EVERY = int(os.environ.get("RENDER_ORPHAN_PURGE_EVERY", "8") or "8")
 
 PAINT_VARIANTS = {
     "blue": (0.12, 0.28, 0.82),
@@ -51,6 +53,8 @@ PAINT_VARIANTS = {
 }
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+_SCENE_CLEAR_COUNT = 0
+BAD_GLB_LOG_PATH = os.path.join(OUTPUT_DIR, "_skipped_bad_glb.txt")
 
 # =====================================================
 # CLEAN NAME
@@ -63,12 +67,42 @@ def clean_name(path):
     return name
 
 
+def validate_glb_header(path):
+    try:
+        file_size = os.path.getsize(path)
+        if file_size < 12:
+            return False, "file too small to be a valid GLB"
+        with open(path, "rb") as f:
+            header = f.read(12)
+        magic, version, declared_len = struct.unpack("<III", header)
+        if magic != 0x46546C67:
+            return False, f"invalid magic: 0x{magic:08X}"
+        if version not in (1, 2):
+            return False, f"unsupported GLB version: {version}"
+        if declared_len != file_size:
+            return False, f"declared size {declared_len} != actual size {file_size}"
+        return True, ""
+    except Exception as ex:
+        return False, str(ex)
+
+
+def log_skipped_bad_glb(path, reason):
+    try:
+        with open(BAD_GLB_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"{path}\t{reason}\n")
+    except Exception:
+        pass
+
+
 # =====================================================
 # SCENE
 # =====================================================
 
 
 def clear_scene():
+    global _SCENE_CLEAR_COUNT
+    _SCENE_CLEAR_COUNT += 1
+
     # Keep static camera/lights; remove model data blocks directly (faster than ops).
     for obj in list(bpy.data.objects):
         if obj.get("_render_static") or obj.name in STATIC_OBJECT_NAMES:
@@ -81,11 +115,12 @@ def clear_scene():
         if not coll.objects and coll.users <= 1:
             bpy.data.collections.remove(coll)
 
-    # Prevent datablock buildup when processing many files.
-    try:
-        bpy.data.orphans_purge(do_recursive=True)
-    except Exception:
-        pass
+    # Prevent datablock buildup without paying purge cost every file.
+    if ORPHAN_PURGE_EVERY > 0 and (_SCENE_CLEAR_COUNT % ORPHAN_PURGE_EVERY == 0):
+        try:
+            bpy.data.orphans_purge(do_recursive=True)
+        except Exception:
+            pass
 
 
 def configure_cycles_device():
@@ -895,12 +930,36 @@ def render_with_postprocess(out_path, meshes, source_path):
     keep_largest_alpha_island(out_path)
 
 
-def process(path, cam, target, color_variants):
+def get_output_paths(path, color_variants):
+    base_name = clean_name(path)
+    base = os.path.join(OUTPUT_DIR, base_name + ".png")
+    variants = [
+        (variant_name, rgb, os.path.join(OUTPUT_DIR, f"{base_name}_{variant_name}.png"))
+        for variant_name, rgb in color_variants
+    ]
+    return base, variants
+
+
+def process(path, cam, target, color_variants, render_base=True):
     print("Processing:", path)
+
+    ok, reason = validate_glb_header(path)
+    if not ok:
+        print("Skipped corrupt GLB:", path, "|", reason)
+        log_skipped_bad_glb(path, reason)
+        return
 
     clear_scene()
 
-    meshes = import_model(path)
+    try:
+        meshes = import_model(path)
+    except Exception as ex:
+        err = str(ex)
+        print("Skipped failed import:", path, "|", err)
+        if "Bad GLB" in err or "file size doesn't match" in err:
+            log_skipped_bad_glb(path, err)
+        return
+
     if not meshes:
         print("Skipped: no meshes")
         return
@@ -921,25 +980,29 @@ def process(path, cam, target, color_variants):
     sanitize_materials_for_icons(meshes)
     place_camera(cam, target, meshes)
 
-    out = os.path.join(OUTPUT_DIR, clean_name(path) + ".png")
-    render_with_postprocess(out, meshes, path)
+    out, variant_outputs = get_output_paths(path, color_variants)
+    if render_base:
+        render_with_postprocess(out, meshes, path)
+        print("Saved:", out)
+    else:
+        print("Skipped existing base PNG:", out)
 
-    print("Saved:", out)
-
-    if color_variants:
+    if variant_outputs:
         body_mats = find_body_materials(meshes)
         if body_mats:
             print("Body material targets:", ", ".join(m.name for m in body_mats))
         else:
             print("No body material candidates found:", path)
-        for variant_name, rgb in color_variants:
+        for variant_name, rgb, vout in variant_outputs:
             if not body_mats:
                 break
+            if os.path.exists(vout):
+                print("Skipped existing variant PNG:", vout)
+                continue
             assigns, created = apply_color_variant(meshes, body_mats, variant_name, rgb)
             if not assigns:
                 restore_material_assignments(assigns, created)
                 continue
-            vout = os.path.join(OUTPUT_DIR, clean_name(path) + f"_{variant_name}.png")
             render_with_postprocess(vout, meshes, path)
             print("Saved:", vout)
             restore_material_assignments(assigns, created)
@@ -994,14 +1057,46 @@ def main():
     if color_variants:
         print("Enabled color variants:", ", ".join(name for name, _ in color_variants))
 
+    work = []
+    skipped_existing = 0
+    for f in files:
+        base_out, variant_outputs = get_output_paths(f, color_variants)
+        base_exists = os.path.exists(base_out)
+        if not color_variants:
+            if base_exists:
+                skipped_existing += 1
+                continue
+            work.append((f, [], True))
+            continue
+
+        missing_variants = [(name, rgb) for name, rgb, out in variant_outputs if not os.path.exists(out)]
+        if base_exists and not missing_variants:
+            skipped_existing += 1
+            continue
+        work.append((f, missing_variants, not base_exists))
+
+    print("Skipped existing outputs:", skipped_existing)
+    print("Queued for render:", len(work))
+    if not work:
+        print("Nothing to do")
+        return
+
     # Build static scene once.
     setup_render()
     setup_hdri()
     setup_studio_lights()
     cam, target = setup_camera()
 
-    for f in files:
-        process(f, cam, target, color_variants)
+    for f, variants, render_base in work:
+        try:
+            process(f, cam, target, variants, render_base=render_base)
+        except Exception as ex:
+            print("Skipped due to unexpected error:", f, "|", ex)
+
+    try:
+        bpy.data.orphans_purge(do_recursive=True)
+    except Exception:
+        pass
 
     print("Done")
 

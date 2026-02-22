@@ -5,6 +5,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -12,7 +13,7 @@ import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, Any, List
 from urllib.parse import urlsplit, parse_qs, urlencode, quote_plus, quote
 
 ThreadingHTTPServer.allow_reuse_address = True
@@ -85,7 +86,6 @@ STATIC_ACCELERATED_FILES = {
 }
 
 _STATIC_FILE_CACHE: Dict[str, dict] = {}
-
 
 @dataclass
 class DevServerConfig:

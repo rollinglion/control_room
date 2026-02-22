@@ -1,0 +1,189 @@
+{
+  "version": 1,
+  "createdFor": "Control Room PEP ingestion/search",
+  "notes": [
+    "This file defines canonical PEP criteria and where each criterion maps in Control Room entities and i2 properties.",
+    "It is schema-first and dataset-agnostic. A dataset-specific adapter should map raw field names to these canonical criteria."
+  ],
+  "canonicalCriteria": [
+    {
+      "criterion": "person.full_name",
+      "priority": "primary",
+      "targetEntityType": "person",
+      "targetAttributes": ["fullName", "firstName", "surname"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Full Name", "First Name", "Surname"],
+      "requiredForEntityCreate": true
+    },
+    {
+      "criterion": "person.aliases",
+      "priority": "primary",
+      "targetEntityType": "person",
+      "targetAttributes": ["aliases"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Nickname(s)", "Has Alias", "Alias Of"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.dob_or_age",
+      "priority": "primary",
+      "targetEntityType": "person",
+      "targetAttributes": ["dob", "ageEstimate", "possibleDobYear"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Date of Birth"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.gender",
+      "priority": "secondary",
+      "targetEntityType": "person",
+      "targetAttributes": ["gender"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Gender"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.nationality",
+      "priority": "secondary",
+      "targetEntityType": "person",
+      "targetAttributes": ["nationality"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Nationality"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.ethnicity",
+      "priority": "secondary",
+      "targetEntityType": "person",
+      "targetAttributes": ["ethnicity"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Ethnic Appearance"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.birth_place",
+      "priority": "secondary",
+      "targetEntityType": "person",
+      "targetAttributes": ["placeOfBirth"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Place of Birth", "Country Of Birth"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.status_or_role",
+      "priority": "primary",
+      "targetEntityType": "person",
+      "targetAttributes": ["officerRole", "status", "pepLevel"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["Status", "Additional Information"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "person.source_reference",
+      "priority": "primary",
+      "targetEntityType": "person",
+      "targetAttributes": ["sourceType", "sourceUrl", "dataset", "uid", "notes"],
+      "targetI2EntityId": "ET5",
+      "targetI2Properties": ["IR or Reference", "SourceItemId", "Additional Information"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "office.organisation_name",
+      "priority": "primary",
+      "targetEntityType": "organisation",
+      "targetAttributes": ["organisationName", "companyName", "companyNumber", "companyType"],
+      "targetI2EntityId": "ET4",
+      "targetI2Properties": ["Organisation Name", "Organisation Type", "Company/Registration Number"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "office.title_or_position",
+      "priority": "primary",
+      "targetEntityType": "organisation",
+      "targetAttributes": ["positionTitle", "officeTitle"],
+      "targetI2EntityId": "ET4",
+      "targetI2Properties": ["Additional Information"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "office.date_range",
+      "priority": "secondary",
+      "targetEntityType": "organisation",
+      "targetAttributes": ["startDate", "endDate"],
+      "targetI2EntityId": "ET4",
+      "targetI2Properties": ["Date Established", "Date of Closure"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "location.address_or_country",
+      "priority": "secondary",
+      "targetEntityType": "location",
+      "targetAttributes": ["address", "postcode", "country", "town"],
+      "targetI2EntityId": "ET1",
+      "targetI2Properties": ["Address String", "Town/City", "Post Code", "Country or Region"],
+      "requiredForEntityCreate": false
+    },
+    {
+      "criterion": "commodity_or_sector",
+      "priority": "secondary",
+      "targetEntityType": "event",
+      "targetAttributes": ["type", "subtype", "description"],
+      "targetI2EntityId": "ET13",
+      "targetI2Properties": ["Type", "Description", "Type and Quantity"],
+      "requiredForEntityCreate": false
+    }
+  ],
+  "relationshipMappings": [
+    {
+      "criterion": "person_holds_office_in_organisation",
+      "relationshipType": "works_at",
+      "fallbackRelationshipType": "linked_to",
+      "defaultLabelTemplate": "Holds office: {office_title}",
+      "fromEntityType": "person",
+      "toEntityType": "organisation"
+    },
+    {
+      "criterion": "person_associated_with_person",
+      "relationshipType": "associated_with",
+      "fallbackRelationshipType": "linked_to",
+      "defaultLabelTemplate": "{association_type}",
+      "fromEntityType": "person",
+      "toEntityType": "person"
+    },
+    {
+      "criterion": "person_linked_to_location",
+      "relationshipType": "resides_at",
+      "fallbackRelationshipType": "linked_to",
+      "defaultLabelTemplate": "{location_context}",
+      "fromEntityType": "person",
+      "toEntityType": "location"
+    },
+    {
+      "criterion": "person_linked_to_commodity",
+      "relationshipType": "linked_to",
+      "fallbackRelationshipType": "linked_to",
+      "defaultLabelTemplate": "Commodity: {commodity}",
+      "fromEntityType": "person",
+      "toEntityType": "event"
+    }
+  ],
+  "searchRankingCriteria": [
+    "person.full_name",
+    "person.aliases",
+    "person.dob_or_age",
+    "person.nationality",
+    "person.status_or_role",
+    "office.organisation_name",
+    "office.title_or_position",
+    "location.address_or_country"
+  ],
+  "minimumResultCardFields": [
+    "full_name",
+    "dob_or_age",
+    "status_or_role",
+    "nationality",
+    "organisation_name_or_office",
+    "location_summary",
+    "source_reference"
+  ]
+}

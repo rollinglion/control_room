@@ -31,6 +31,9 @@
 
     // Sync any legacy entities already placed before init
     _syncLegacyToStore();
+    if (_map && typeof _map.on === "function") {
+      _map.on("zoomend moveend", _refreshRelationshipLabelMarkers);
+    }
   }
 
   // ── Import existing window._mapEntities into EntityStore (one-time) ──
@@ -109,9 +112,13 @@
   }
 
   // ── Synchronous icon creation (uses cache) ──
-  function createEntityMarkerIconSync(entityType, iconData, i2EntityData) {
+  function createEntityMarkerIconSync(entityType, iconData, i2EntityData, attributes, iconOverride) {
     if (window.IconSystem) {
-      return window.IconSystem.resolveEntityIconSync({ type: entityType, attributes: {} });
+      return window.IconSystem.resolveEntityIconSync({
+        type: entityType,
+        attributes: attributes || {},
+        iconOverride: iconOverride || null
+      });
     }
     if (typeof window.createEntityMarkerIcon === "function") {
       return window.createEntityMarkerIcon(iconData, i2EntityData);
@@ -154,7 +161,7 @@
     if (!_map || !_entitiesCluster) return;
     if (entity._marker) return; // Already has a marker
 
-    var icon = createEntityMarkerIconSync(entity.type, null, entity.i2EntityData);
+    var icon = createEntityMarkerIconSync(entity.type, null, entity.i2EntityData, entity.attributes, entity.iconOverride);
     var marker = L.marker(entity.latLng, { icon: icon, draggable: true });
 
     marker._entityId = entity.id;
@@ -162,7 +169,7 @@
 
     // Build popup
     var popupHtml = buildStoreEntityPopup(entity);
-    marker.bindPopup(popupHtml);
+    marker.bindPopup(popupHtml, { maxWidth: 460, minWidth: 340 });
 
     // Hover tooltip
     _bindStoreEntityTooltip(marker, entity);
@@ -275,7 +282,7 @@
     if (rel.label || rel.type) {
       var midLat = (fromEntity.latLng[0] + toEntity.latLng[0]) / 2;
       var midLng = (fromEntity.latLng[1] + toEntity.latLng[1]) / 2;
-      var displayLabel = rel.label || (relType?.label || rel.type).replace(/_/g, " ");
+      var displayLabel = _getConnectionDisplayLabel(fromEntity, toEntity, rel, relType);
       var labelIcon = L.divIcon({
         className: "connection-label",
         html: '<div class="connection-label-text">' + _escapeHtml(displayLabel) + '</div>',
@@ -285,7 +292,60 @@
       rel._labelMarker = L.marker([midLat, midLng], { icon: labelIcon }).addTo(_connectionsLayer);
     }
 
+    _refreshRelationshipLabelMarkers();
+
     if (typeof window.updateDashboardCounts === "function") window.updateDashboardCounts();
+  }
+
+  function _getConnectionDisplayLabel(fromEntity, toEntity, rel, relType) {
+    var relationLabel = String(rel?.label || (relType?.label || rel?.type || "")).replace(/_/g, " ").trim();
+    var fromLabel = String(fromEntity?.label || "").trim();
+    var toLabel = String(toEntity?.label || "").trim();
+    if (!_map || !Array.isArray(fromEntity?.latLng) || !Array.isArray(toEntity?.latLng)) {
+      return relationLabel || toLabel || fromLabel || "Linked";
+    }
+    try {
+      var p1 = _map.latLngToContainerPoint(fromEntity.latLng);
+      var p2 = _map.latLngToContainerPoint(toEntity.latLng);
+      var px = p1 && p2 && typeof p1.distanceTo === "function" ? p1.distanceTo(p2) : NaN;
+      if (Number.isFinite(px) && px <= 110) {
+        return toLabel || relationLabel || fromLabel || "Linked";
+      }
+    } catch (_) {
+      // Fall back to geographic distance only.
+    }
+    var meters = _map.distance(fromEntity.latLng, toEntity.latLng);
+    if (Number.isFinite(meters) && meters <= 120) {
+      return toLabel || relationLabel || fromLabel || "Linked";
+    }
+    return relationLabel || toLabel || fromLabel || "Linked";
+  }
+
+  function _refreshRelationshipLabelMarkers() {
+    if (!_map || !window.EntityStore) return;
+    var currentZoom = typeof _map.getZoom === "function" ? Number(_map.getZoom()) : 0;
+    var showLabels = currentZoom >= 12;
+    var rels = typeof window.EntityStore.getAllRelationships === "function"
+      ? window.EntityStore.getAllRelationships()
+      : [];
+    rels.forEach(function (rel) {
+      if (!rel || !rel._labelMarker || !rel._line) return;
+      var fromEntity = window.EntityStore.getEntity(rel.fromId);
+      var toEntity = window.EntityStore.getEntity(rel.toId);
+      if (!fromEntity?.latLng || !toEntity?.latLng) return;
+      var relType = window.EntityStore.RELATIONSHIP_TYPES[rel.type];
+      var displayLabel = _getConnectionDisplayLabel(fromEntity, toEntity, rel, relType);
+      var midLat = (fromEntity.latLng[0] + toEntity.latLng[0]) / 2;
+      var midLng = (fromEntity.latLng[1] + toEntity.latLng[1]) / 2;
+      rel._labelMarker.setLatLng([midLat, midLng]);
+      rel._labelMarker.setOpacity(showLabels ? 1 : 0);
+      rel._labelMarker.setIcon(L.divIcon({
+        className: "connection-label",
+        html: '<div class="connection-label-text">' + _escapeHtml(displayLabel) + "</div>",
+        iconSize: [150, 30],
+        iconAnchor: [75, 15]
+      }));
+    });
   }
 
   function _onRelationshipRemoved(rel) {
@@ -317,9 +377,9 @@
     var typeLabel = typeDef?.label || type;
     var attrs = entity.attributes || {};
 
-    var html = '<strong>' + _escapeHtml(entity.label || "Entity") + '</strong>';
+    var html = '<div class="entity-popup-shell"><strong>' + _escapeHtml(entity.label || "Entity") + '</strong>';
     var popupStreetViewHtml =
-      entity.latLng && window.StreetView && typeof window.StreetView.getPopupThumbnailHtml === "function"
+      type !== "person" && entity.latLng && window.StreetView && typeof window.StreetView.getPopupThumbnailHtml === "function"
         ? window.StreetView.getPopupThumbnailHtml(entity.latLng[0], entity.latLng[1], {
           addressString: attrs.address || entity.label || ""
         })
@@ -332,7 +392,28 @@
     if (type === "person") {
       if (attrs.dob) html += '<span class="popup-label">DOB</span> ' + _escapeHtml(attrs.dob) + '<br>';
       if (attrs.nationality) html += '<span class="popup-label">Nationality</span> ' + _escapeHtml(attrs.nationality) + '<br>';
+      if (attrs.countryOfResidence) html += '<span class="popup-label">Country of Residence</span> ' + _escapeHtml(attrs.countryOfResidence) + '<br>';
       if (attrs.officerRole) html += '<span class="popup-label">Role</span> ' + _escapeHtml(attrs.officerRole) + '<br>';
+      if (attrs.gender) html += '<span class="popup-label">Gender</span> ' + _escapeHtml(attrs.gender) + '<br>';
+      if (attrs.ethnicity) html += '<span class="popup-label">Ethnicity</span> ' + _escapeHtml(attrs.ethnicity) + '<br>';
+      if (attrs.hairColor) html += '<span class="popup-label">Hair</span> ' + _escapeHtml(attrs.hairColor) + '<br>';
+      if (attrs.height) html += '<span class="popup-label">Height</span> ' + _escapeHtml(attrs.height) + '<br>';
+      if (attrs.ageEstimate) html += '<span class="popup-label">Age (Est.)</span> ' + _escapeHtml(attrs.ageEstimate) + '<br>';
+      if (attrs.possibleDobYear) html += '<span class="popup-label">DOB Year (Est.)</span> ' + _escapeHtml(attrs.possibleDobYear) + '<br>';
+      if (attrs.criminality) html += '<span class="popup-label">Criminality</span> ' + _escapeHtml(attrs.criminality) + '<br>';
+      if (attrs.incidentYears) html += '<span class="popup-label">Years</span> ' + _escapeHtml(attrs.incidentYears) + '<br>';
+      if (attrs.victimCount) html += '<span class="popup-label">Victims</span> ' + _escapeHtml(attrs.victimCount) + '<br>';
+      if (attrs.moneyMentions) html += '<span class="popup-label">Money</span> ' + _escapeHtml(attrs.moneyMentions) + '<br>';
+      if (attrs.aliases) html += '<span class="popup-label">Aliases</span> ' + _escapeHtml(attrs.aliases) + '<br>';
+      if (attrs.address) html += '<span class="popup-label">Address</span> ' + _escapeHtml(attrs.address) + '<br>';
+      if (attrs.sourceUrl) html += '<span class="popup-label">Source URL</span> <a href="' + _escapeHtml(attrs.sourceUrl) + '" target="_blank" rel="noopener noreferrer">Open</a><br>';
+      if (attrs.dataset || attrs.notes) {
+        html += '<details class="popup-more-details">';
+        html += '<summary>More details</summary>';
+        if (attrs.dataset) html += '<span class="popup-label">Dataset</span> ' + _escapeHtml(attrs.dataset) + '<br>';
+        if (attrs.notes) html += '<span class="popup-label">Notes</span> ' + _escapeHtml(attrs.notes).replace(/\n/g, '<br>');
+        html += '</details>';
+      }
     } else if (type === "vehicle") {
       if (attrs.vrm) html += '<span class="popup-label">VRM</span> ' + _escapeHtml(attrs.vrm) + '<br>';
       if (attrs.Vehicle_Make) html += '<span class="popup-label">Make</span> ' + _escapeHtml(attrs.Vehicle_Make) + '<br>';
@@ -349,17 +430,14 @@
     }
 
     // Address and notes
-    if (attrs.address) html += '<span class="popup-label">Address</span> ' + _escapeHtml(attrs.address) + '<br>';
-    if (attrs.notes) html += '<span class="popup-label">Notes</span> ' + _escapeHtml(attrs.notes).replace(/\n/g, '<br>') + '<br>';
-
-    // Coordinates
-    if (entity.latLng) {
-      html += '<span class="popup-label">Lat/Lng</span> ' + entity.latLng[0].toFixed(5) + ', ' + entity.latLng[1].toFixed(5);
+    if (type !== "person") {
+      if (attrs.address) html += '<span class="popup-label">Address</span> ' + _escapeHtml(attrs.address) + '<br>';
+      if (attrs.notes) html += '<span class="popup-label">Notes</span> ' + _escapeHtml(attrs.notes).replace(/\n/g, '<br>') + '<br>';
     }
     if (popupStreetViewHtml) html += popupStreetViewHtml;
 
     // i2 data summary
-    if (entity.i2EntityData && typeof window.formatI2EntitySummary === "function") {
+    if (type !== "person" && entity.i2EntityData && typeof window.formatI2EntitySummary === "function") {
       html += window.formatI2EntitySummary(entity.i2EntityData);
     }
 
@@ -384,6 +462,7 @@
     html += '<button class="popup-psc-btn" onclick="removeEntity(\'' + entity.id + '\')">Remove</button>';
     html += '</div>';
 
+    html += '</div>';
     return html;
   }
 
@@ -475,7 +554,8 @@
     upgradeAllEntityIcons: upgradeAllEntityIcons,
     getTypeColor: getTypeColor,
     inferEntityType: _inferEntityType,
-    extractAttributes: _extractAttributes
+    extractAttributes: _extractAttributes,
+    refreshRelationshipLabelMarkers: _refreshRelationshipLabelMarkers
   };
 
   // Also expose the aircraft icon creator for IconSystem

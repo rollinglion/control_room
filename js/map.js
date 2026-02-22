@@ -2920,18 +2920,34 @@ function parseAddressString(rawAddress) {
   const parts = withoutPostcode.split(",").map((p) => p.trim()).filter(Boolean);
   const first = parts[0] || "";
 
-  const firstMatch = first.match(/^(\d+[A-Z]?(?:\/\d+[A-Z]?)?)\s+(.+)$/i);
-  if (firstMatch) {
-    out.buildingNumber = firstMatch[1].trim();
-    out.streetName = firstMatch[2].trim();
+  const parseStreetToken = (token) => {
+    const t = String(token || "").trim();
+    if (!t) return null;
+    const direct = t.match(/^(\d+[A-Z]?(?:[-/]\d+[A-Z]?)?)\s+(.+)$/i);
+    if (direct) return { buildingNumber: direct[1].trim(), streetName: direct[2].trim() };
+    const withUnit = t.match(/^(?:flat|apartment|apt|unit|suite|room|rm|floor|fl)\s+\w+\s*[,-]?\s*(\d+[A-Z]?(?:[-/]\d+[A-Z]?)?)\s+(.+)$/i);
+    if (withUnit) return { buildingNumber: withUnit[1].trim(), streetName: withUnit[2].trim() };
+    const trailing = t.match(/^(.+?)\s+(\d+[A-Z]?)$/i);
+    if (trailing) return { buildingNumber: trailing[2].trim(), streetName: trailing[1].trim() };
+    return null;
+  };
+
+  let parsedStreet = parseStreetToken(first);
+  let localityOffset = 1;
+  if (!parsedStreet && parts.length > 1) {
+    parsedStreet = parseStreetToken(parts[1]);
+    if (parsedStreet) localityOffset = 2;
+  }
+  if (parsedStreet) {
+    out.buildingNumber = parsedStreet.buildingNumber;
+    out.streetName = parsedStreet.streetName;
   } else if (first) {
-    // Keep full first token as street/address fragment when no obvious number.
     out.streetName = first;
   }
 
-  if (parts.length > 1) out.town = parts[1];
-  if (parts.length > 2) out.county = parts[2];
-  if (parts.length > 3) out.country = parts.slice(3).join(", ");
+  if (parts.length > localityOffset) out.town = parts[localityOffset];
+  if (parts.length > localityOffset + 1) out.county = parts[localityOffset + 1];
+  if (parts.length > localityOffset + 2) out.country = parts.slice(localityOffset + 2).join(", ");
   if (!out.country && out.county) out.country = out.county;
 
   return out;
@@ -3346,6 +3362,31 @@ function normalizeConnectionLabel(label) {
   return raw.replace(/[_-]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
+function resolveConnectionDisplayLabel(fromLatLng, toLatLng, label, metadata = {}) {
+  const relationLabel = String(label || "").trim();
+  const fromLabel = String(metadata?.fromLabel || "").trim();
+  const toLabel = String(metadata?.toLabel || "").trim();
+
+  if (window._map && Array.isArray(fromLatLng) && Array.isArray(toLatLng)) {
+    try {
+      const p1 = window._map.latLngToContainerPoint(fromLatLng);
+      const p2 = window._map.latLngToContainerPoint(toLatLng);
+      const px = p1 && p2 && typeof p1.distanceTo === "function" ? p1.distanceTo(p2) : NaN;
+      if (Number.isFinite(px) && px <= 110) {
+        return toLabel || relationLabel || fromLabel || "Linked";
+      }
+    } catch (_) {
+      // Fall back to geographic distance only.
+    }
+
+    const meters = window._map.distance(fromLatLng, toLatLng);
+    if (Number.isFinite(meters) && meters <= 120) {
+      return toLabel || relationLabel || fromLabel || "Linked";
+    }
+  }
+
+  return relationLabel || toLabel || fromLabel || "Linked";
+}
 function mapConnectionTypeToStoreRelationship(type = "", label = "") {
   const normalizedType = String(type || "").toLowerCase();
   const normalizedLabel = String(label || "").toLowerCase();
@@ -3360,6 +3401,7 @@ function mapConnectionTypeToStoreRelationship(type = "", label = "") {
 
 function addConnection(fromLatLng, toLatLng, label, type = 'officer', metadata = {}) {
   label = normalizeConnectionLabel(label);
+  const displayLabel = resolveConnectionDisplayLabel(fromLatLng, toLatLng, label, metadata);
   const connectionId = `conn_${Date.now()}_${Math.random()}`;
   const from = normalizeLatLng(fromLatLng);
   const to = normalizeLatLng(toLatLng);
@@ -3393,13 +3435,13 @@ function addConnection(fromLatLng, toLatLng, label, type = 'officer', metadata =
   });
   
   // Add label at midpoint
-  if (label) {
+  if (displayLabel) {
     const midLat = (from[0] + to[0]) / 2;
     const midLng = (from[1] + to[1]) / 2;
     
     const labelIcon = L.divIcon({
       className: 'connection-label',
-      html: `<div class="connection-label-text">${escapeHtml(label)}</div>`,
+      html: `<div class="connection-label-text">${escapeHtml(displayLabel)}</div>`,
       iconSize: [150, 30],
       iconAnchor: [75, 15]
     });
@@ -3418,6 +3460,7 @@ function addConnection(fromLatLng, toLatLng, label, type = 'officer', metadata =
       id: connectionId,
       type,
       label,
+      displayLabel,
       fromLatLng: from,
       toLatLng: to,
       line: polyline,
@@ -3549,6 +3592,33 @@ function clearConnections() {
   window._mapConnections = [];
   updateDashboardCounts();
 }
+
+function refreshLegacyConnectionLabels() {
+  if (!window._map || !Array.isArray(window._mapConnections)) return;
+  const currentZoom = typeof window._map.getZoom === "function" ? Number(window._map.getZoom()) : 0;
+  const showLabels = currentZoom >= 12;
+  window._mapConnections.forEach((conn) => {
+    if (!conn?.labelMarker || !conn?.line) return;
+    const coords = conn.line.getLatLngs?.() || [];
+    if (!coords[0] || !coords[1]) return;
+    const fromLatLng = [coords[0].lat, coords[0].lng];
+    const toLatLng = [coords[1].lat, coords[1].lng];
+    const nextDisplay = resolveConnectionDisplayLabel(fromLatLng, toLatLng, conn.label || "", conn.metadata || {});
+    conn.displayLabel = nextDisplay;
+    const midLat = (fromLatLng[0] + toLatLng[0]) / 2;
+    const midLng = (fromLatLng[1] + toLatLng[1]) / 2;
+    conn.labelMarker.setLatLng([midLat, midLng]);
+    conn.labelMarker.setOpacity(showLabels ? 1 : 0);
+    conn.labelMarker.setIcon(L.divIcon({
+      className: "connection-label",
+      html: `<div class="connection-label-text">${escapeHtml(nextDisplay)}</div>`,
+      iconSize: [150, 30],
+      iconAnchor: [75, 15]
+    }));
+  });
+}
+
+map.on("zoomend moveend", refreshLegacyConnectionLabels);
 
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // ENTITY PLACEMENT
@@ -4934,20 +5004,24 @@ function editConnection(connectionId) {
   if (newLabel === null) return;
   
   conn.label = normalizeConnectionLabel(newLabel.trim());
+  const coordsForDisplay = conn.line?.getLatLngs?.() || [];
+  const fromLatLng = coordsForDisplay[0] ? [coordsForDisplay[0].lat, coordsForDisplay[0].lng] : conn.fromLatLng;
+  const toLatLng = coordsForDisplay[1] ? [coordsForDisplay[1].lat, coordsForDisplay[1].lng] : conn.toLatLng;
+  conn.displayLabel = resolveConnectionDisplayLabel(fromLatLng, toLatLng, conn.label, conn.metadata || {});
   
   // Update label marker
   if (conn.labelMarker) {
     connectionsLayer.removeLayer(conn.labelMarker);
   }
   
-  if (conn.label) {
+  if (conn.displayLabel || conn.label) {
     const coords = conn.line.getLatLngs();
     const midLat = (coords[0].lat + coords[1].lat) / 2;
     const midLng = (coords[0].lng + coords[1].lng) / 2;
     
     const labelIcon = L.divIcon({
       className: 'connection-label',
-      html: `<div class="connection-label-text">${escapeHtml(conn.label)}</div>`,
+      html: `<div class="connection-label-text">${escapeHtml(conn.displayLabel || conn.label)}</div>`,
       iconSize: [150, 30],
       iconAnchor: [75, 15]
     });
@@ -5515,6 +5589,174 @@ function _classifyVesselType(ship) {
   return "ship-other";
 }
 
+let AIS_SANCTION_HIGHLIGHT_ENABLED = false;
+let AIS_SANCTION_INDEX_PROMISE = null;
+let AIS_SANCTION_INDEX = null;
+
+function _normalizeShipNumber(value) {
+  return String(value || "").replace(/^IMO/i, "").replace(/\D/g, "");
+}
+
+function _normalizeShipName(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function _parseCsvRowLite(line) {
+  const out = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    const next = line[i + 1];
+    if (ch === '"') {
+      if (inQuotes && next === '"') {
+        cur += '"';
+        i++;
+        continue;
+      }
+      inQuotes = !inQuotes;
+      continue;
+    }
+    if (ch === "," && !inQuotes) {
+      out.push(cur);
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.map((v) => String(v || "").trim());
+}
+
+async function _ensureSanctionedVesselIndexLoaded() {
+  if (AIS_SANCTION_INDEX) return AIS_SANCTION_INDEX;
+  if (AIS_SANCTION_INDEX_PROMISE) return AIS_SANCTION_INDEX_PROMISE;
+  AIS_SANCTION_INDEX_PROMISE = fetch("data/watchlists/maritime.csv")
+    .then((r) => {
+      if (!r.ok) throw new Error("maritime.csv unavailable");
+      return r.text();
+    })
+    .then((text) => {
+      const lines = String(text || "").split(/\r?\n/).filter((x) => String(x || "").trim());
+      if (!lines.length) return { byMmsi: new Map(), byImo: new Map(), byName: new Map() };
+      const headers = _parseCsvRowLite(lines[0]).map((h) => String(h || "").toLowerCase());
+      const byMmsi = new Map();
+      const byImo = new Map();
+      const byName = new Map();
+      for (let i = 1; i < lines.length; i++) {
+        const cols = _parseCsvRowLite(lines[i]);
+        if (!cols.length) continue;
+        const row = {};
+        headers.forEach((h, idx) => { row[h] = String(cols[idx] || "").trim(); });
+        const rec = {
+          id: String(row.id || ""),
+          caption: String(row.caption || row.name || ""),
+          mmsi: String(row.mmsi || ""),
+          imo: String(row.imo || "").replace(/^IMO/i, ""),
+          risk: String(row.risk || ""),
+          flag: String(row.flag || ""),
+          countries: String(row.countries || ""),
+          datasets: String(row.datasets || ""),
+          url: String(row.url || "")
+        };
+        const mmsiKey = _normalizeShipNumber(rec.mmsi);
+        const imoKey = _normalizeShipNumber(rec.imo);
+        const nameKey = _normalizeShipName(rec.caption);
+        if (mmsiKey && !byMmsi.has(mmsiKey)) byMmsi.set(mmsiKey, rec);
+        if (imoKey && !byImo.has(imoKey)) byImo.set(imoKey, rec);
+        if (nameKey && !byName.has(nameKey)) byName.set(nameKey, rec);
+      }
+      return { byMmsi, byImo, byName };
+    })
+    .catch(() => ({ byMmsi: new Map(), byImo: new Map(), byName: new Map() }))
+    .then((idx) => {
+      AIS_SANCTION_INDEX = idx;
+      return idx;
+    })
+    .finally(() => {
+      AIS_SANCTION_INDEX_PROMISE = null;
+    });
+  return AIS_SANCTION_INDEX_PROMISE;
+}
+
+function _findSanctionMatchForShip(ship) {
+  const idx = AIS_SANCTION_INDEX;
+  if (!idx) return null;
+  const mmsiKey = _normalizeShipNumber(ship?.mmsi);
+  const imoKey = _normalizeShipNumber(ship?.imo);
+  const nameKey = _normalizeShipName(ship?.name || ship?.shipName);
+  if (mmsiKey && idx.byMmsi.has(mmsiKey)) return idx.byMmsi.get(mmsiKey);
+  if (imoKey && idx.byImo.has(imoKey)) return idx.byImo.get(imoKey);
+  if (nameKey && idx.byName.has(nameKey)) return idx.byName.get(nameKey);
+  return null;
+}
+
+function _makeShipIcon(heading, vesselClass, isSanctioned) {
+  const shipSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L6 12l1 6h10l1-6L12 2zm0 2.5L16 11H8l4-6.5zM7.5 18.5l-.3 1.5h9.6l-.3-1.5H7.5z"/></svg>';
+  const sanctionClass = (AIS_SANCTION_HIGHLIGHT_ENABLED && isSanctioned) ? " ship-sanctioned" : "";
+  const shipHtml =
+    `<div class="ship-icon ${vesselClass}${sanctionClass}" style="--ship-icon-size:20px">` +
+      `<span class="ship-inner" style="transform:rotate(${heading}deg)">` +
+        `${shipSvg}` +
+      `</span>` +
+    `</div>`;
+  return L.divIcon({
+    className: "ship-marker",
+    html: shipHtml,
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -12]
+  });
+}
+
+function _shipDisplayName(ship, sanction) {
+  const direct = String(ship?.name || ship?.shipName || "").trim();
+  if (direct) return direct;
+  const sanctionName = String(sanction?.caption || "").trim();
+  if (sanctionName) return sanctionName;
+  const mmsi = String(ship?.mmsi || "").trim();
+  return mmsi ? `Vessel ${mmsi}` : "Unknown Vessel";
+}
+
+function _buildShipPopupHtml(ship, heading, sanction) {
+  const vesselName = _shipDisplayName(ship, sanction);
+  const vesselType = ship.shipType || ship.type || "";
+  const callSign = ship.callSign || ship.callsign || "";
+  const navStatus = ship.navStatus || ship.status || "";
+  const destination = ship.destination || ship.dest || "";
+  const lastSeen = ship.lastSeen || ship.timestamp || ship.receivedAt || "";
+  return (
+    `<strong>${escapeHtml(String(vesselName))}</strong><br>` +
+    `<span class="popup-label">MMSI</span> ${escapeHtml(String(ship.mmsi || ""))}<br>` +
+    (ship.imo ? `<span class="popup-label">IMO</span> ${escapeHtml(String(ship.imo))}<br>` : "") +
+    (vesselType ? `<span class="popup-label">Type</span> ${escapeHtml(String(vesselType))}<br>` : "") +
+    (callSign ? `<span class="popup-label">Call Sign</span> ${escapeHtml(String(callSign))}<br>` : "") +
+    (navStatus ? `<span class="popup-label">Nav Status</span> ${escapeHtml(String(navStatus))}<br>` : "") +
+    `<span class="popup-label">Speed</span> ${escapeHtml(String(ship.speed || 0))} knots<br>` +
+    `<span class="popup-label">Heading</span> ${heading}�` +
+    (destination ? `<br><span class="popup-label">Destination</span> ${escapeHtml(String(destination))}` : "") +
+    (lastSeen ? `<br><span class="popup-label">Last Seen</span> ${escapeHtml(String(lastSeen))}` : "") +
+    (sanction ? `<br><span class="popup-label">Sanctions</span> Match` : "") +
+    (sanction?.risk ? `<br><span class="popup-label">Risk</span> ${escapeHtml(String(sanction.risk))}` : "") +
+    (sanction?.datasets ? `<br><span class="popup-label">Dataset</span> ${escapeHtml(String(sanction.datasets))}` : "") +
+    (sanction?.url ? `<br><span class="popup-label">Source</span> <a href="${escapeHtml(String(sanction.url))}" target="_blank" rel="noopener noreferrer">Open</a>` : "")
+  );
+}
+window.setAisSanctionHighlight = async function (enabled) {
+  AIS_SANCTION_HIGHLIGHT_ENABLED = !!enabled;
+  await _ensureSanctionedVesselIndexLoaded();
+  if (!layers?.ships || typeof layers.ships.eachLayer !== "function") return;
+  layers.ships.eachLayer((marker) => {
+    const ship = marker?._shipData;
+    if (!ship) return;
+    const heading = Number.isFinite(Number(ship.heading)) ? Number(ship.heading) : 0;
+    const vesselClass = _classifyVesselType(ship);
+    const sanction = marker._sanctionMatch || _findSanctionMatchForShip(ship);
+    marker._sanctionMatch = sanction || null;
+    marker.setIcon(_makeShipIcon(heading, vesselClass, !!sanction));
+  });
+};
+
 // â"€â"€ Ships (AISStream Live) Loader â"€â"€
 
 async function ensureShipsLoaded() {
@@ -5524,6 +5766,8 @@ async function ensureShipsLoaded() {
 
   if (OVERLAY_LOAD_STATE.shipsLoading)
     return OVERLAY_LOAD_STATE.shipsLoading;
+
+    await _ensureSanctionedVesselIndexLoaded();
 
   OVERLAY_LOAD_STATE.shipsLoading = fetch("data/live/ships_live.json")
 
@@ -5549,34 +5793,12 @@ async function ensureShipsLoaded() {
 
         const heading = Number.isFinite(Number(ship.heading)) ? Number(ship.heading) : 0;
         const vesselClass = _classifyVesselType(ship);
-        const shipSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L6 12l1 6h10l1-6L12 2zm0 2.5L16 11H8l4-6.5zM7.5 18.5l-.3 1.5h9.6l-.3-1.5H7.5z"/></svg>';
-        const shipHtml =
-          `<div class="ship-icon ${vesselClass}" style="--ship-icon-size:20px">` +
-            `<span class="ship-inner" style="transform:rotate(${heading}deg)">` +
-              `${shipSvg}` +
-            `</span>` +
-          `</div>`;
-        const shipIcon = L.divIcon({
-          className: "ship-marker",
-          html: shipHtml,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
-          popupAnchor: [0, -12]
-        });
-
+        const sanction = _findSanctionMatchForShip(ship);
+        const shipIcon = _makeShipIcon(heading, vesselClass, !!sanction);
         const marker = L.marker([ship.lat, ship.lon], { icon: shipIcon });
-
-        const vesselName = ship.name || ship.shipName || "Unknown Vessel";
-        const vesselType = ship.shipType || ship.type || "";
-        marker.bindPopup(
-          `<strong>${escapeHtml(String(vesselName))}</strong><br>` +
-          `<span class="popup-label">MMSI</span> ${escapeHtml(String(ship.mmsi))}<br>` +
-          (ship.imo ? `<span class="popup-label">IMO</span> ${escapeHtml(String(ship.imo))}<br>` : '') +
-          (vesselType ? `<span class="popup-label">Type</span> ${escapeHtml(String(vesselType))}<br>` : '') +
-          `<span class="popup-label">Speed</span> ${escapeHtml(String(ship.speed || 0))} knots<br>` +
-          `<span class="popup-label">Heading</span> ${heading}°` +
-          (ship.destination ? `<br><span class="popup-label">Destination</span> ${escapeHtml(String(ship.destination))}` : '')
-        );
+        marker._shipData = ship;
+        marker._sanctionMatch = sanction || null;
+        marker.bindPopup(_buildShipPopupHtml(ship, heading, sanction));
 
         layers.ships.addLayer(marker);
 
@@ -5788,6 +6010,8 @@ async function ensureShipsLoaded() {
   if (OVERLAY_LOAD_STATE.shipsLoading)
     return OVERLAY_LOAD_STATE.shipsLoading;
 
+  await _ensureSanctionedVesselIndexLoaded();
+
   OVERLAY_LOAD_STATE.shipsLoading = fetch("data/live/ships_live.json")
 
     .then(r => {
@@ -5812,34 +6036,12 @@ async function ensureShipsLoaded() {
 
         const heading = Number.isFinite(Number(ship.heading)) ? Number(ship.heading) : 0;
         const vesselClass = _classifyVesselType(ship);
-        const shipSvg = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2L6 12l1 6h10l1-6L12 2zm0 2.5L16 11H8l4-6.5zM7.5 18.5l-.3 1.5h9.6l-.3-1.5H7.5z"/></svg>';
-        const shipHtml =
-          `<div class="ship-icon ${vesselClass}" style="--ship-icon-size:20px">` +
-            `<span class="ship-inner" style="transform:rotate(${heading}deg)">` +
-              `${shipSvg}` +
-            `</span>` +
-          `</div>`;
-        const shipIcon = L.divIcon({
-          className: "ship-marker",
-          html: shipHtml,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
-          popupAnchor: [0, -12]
-        });
-
+        const sanction = _findSanctionMatchForShip(ship);
+        const shipIcon = _makeShipIcon(heading, vesselClass, !!sanction);
         const marker = L.marker([ship.lat, ship.lon], { icon: shipIcon });
-
-        const vesselName = ship.name || ship.shipName || "Unknown Vessel";
-        const vesselType = ship.shipType || ship.type || "";
-        marker.bindPopup(
-          `<strong>${escapeHtml(String(vesselName))}</strong><br>` +
-          `<span class="popup-label">MMSI</span> ${escapeHtml(String(ship.mmsi))}<br>` +
-          (ship.imo ? `<span class="popup-label">IMO</span> ${escapeHtml(String(ship.imo))}<br>` : '') +
-          (vesselType ? `<span class="popup-label">Type</span> ${escapeHtml(String(vesselType))}<br>` : '') +
-          `<span class="popup-label">Speed</span> ${escapeHtml(String(ship.speed || 0))} knots<br>` +
-          `<span class="popup-label">Heading</span> ${heading}°` +
-          (ship.destination ? `<br><span class="popup-label">Destination</span> ${escapeHtml(String(ship.destination))}` : '')
-        );
+        marker._shipData = ship;
+        marker._sanctionMatch = sanction || null;
+        marker.bindPopup(_buildShipPopupHtml(ship, heading, sanction));
 
         layers.ships.addLayer(marker);
 
@@ -5874,7 +6076,6 @@ async function ensureShipsLoaded() {
   return OVERLAY_LOAD_STATE.shipsLoading;
 
 }
-
 // Automatically load when overlay is enabled
 map.on("overlayadd", function(e) {
 
@@ -7466,6 +7667,25 @@ document.addEventListener("DOMContentLoaded", async () => {
     numInput.placeholder = "House number (e.g. 1)";
     placementAddressInput.parentNode?.insertBefore(numInput, placementAddressInput);
   }
+  const placementNumberInput = document.getElementById("entity-placement-number");
+  const syncPlacementNumberFromAddress = () => {
+    const addrVal = String(placementAddressInput?.value || "").trim();
+    if (!addrVal || !placementNumberInput) return;
+    const parsed = parseAddressString(addrVal);
+    const parsedNum = String(parsed?.buildingNumber || "").trim();
+    if (!parsedNum) return;
+    const current = String(placementNumberInput.value || "").trim();
+    const manual = placementNumberInput.dataset.manual === "1";
+    if (!current || !manual) {
+      placementNumberInput.value = parsedNum;
+      placementNumberInput.dataset.manual = "0";
+    }
+  };
+  placementAddressInput?.addEventListener("input", syncPlacementNumberFromAddress);
+  placementAddressInput?.addEventListener("blur", syncPlacementNumberFromAddress);
+  placementNumberInput?.addEventListener("input", () => {
+    placementNumberInput.dataset.manual = String(placementNumberInput.value || "").trim() ? "1" : "0";
+  });
   
   // Category change handler
   entityCategorySelect?.addEventListener('change', async (e) => {
@@ -7976,52 +8196,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   });
 
-  const quickSearchCompanyBtn = document.getElementById("quick-search-company");
-  const quickSearchOfficerBtn = document.getElementById("quick-search-officer");
-  const quickSearchDvlaBtn = document.getElementById("quick-search-dvla");
-  quickSearchCompanyBtn?.addEventListener("click", () => {
-    document.getElementById("ch_name")?.focus();
-  });
-  quickSearchOfficerBtn?.addEventListener("click", () => {
-    const details = document.getElementById("people-ops-block");
-    if (details) details.open = true;
-    document.getElementById("psc_name")?.focus();
-  });
-  quickSearchDvlaBtn?.addEventListener("click", () => {
-    const details = document.getElementById("dvla-ops-block");
-    if (details) details.open = true;
-    document.getElementById("dvla-vrm-input")?.focus();
-  });
-
-  const quickEntityPlaceBtn = document.getElementById("quick-entity-place");
-  const quickEntityImportBtn = document.getElementById("quick-entity-import");
-  const quickEntityExportBtn = document.getElementById("quick-entity-export");
-  quickEntityPlaceBtn?.addEventListener("click", () => {
-    const firstCategoryBtn = document.querySelector("#entity_selector .entity-btn");
-    if (firstCategoryBtn) {
-      firstCategoryBtn.click();
-      showToast("Select a map point to place the new entity", "info");
-    } else {
-      showToast("Entity categories are still loading", "info");
-    }
-  });
-  quickEntityImportBtn?.addEventListener("click", () => {
-    entityImportFile?.click();
-  });
-  quickEntityExportBtn?.addEventListener("click", () => {
-    exportEntitiesToExcel();
-  });
-
-  function toggleLayerFromQuickAction(layerId) {
-    const cb = document.querySelector(`.layer-cb[data-layer="${layerId}"]`);
-    if (!cb) return;
-    cb.checked = !cb.checked;
-    cb.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  const quickLayerUndergroundBtn = document.getElementById("quick-layer-underground");
-  const quickLayerFlightsBtn = document.getElementById("quick-layer-flights");
-  const quickLayerHealthBtn = document.getElementById("quick-layer-health");
   function setLayerEnabled(layerId, enabled) {
     const cb = document.querySelector(`.layer-cb[data-layer="${layerId}"]`);
     if (!cb) return;
@@ -8029,15 +8203,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     cb.checked = !!enabled;
     cb.dispatchEvent(new Event("change", { bubbles: true }));
   }
-
-  quickLayerUndergroundBtn?.addEventListener("click", () => toggleLayerFromQuickAction("underground"));
-  quickLayerFlightsBtn?.addEventListener("click", () => toggleLayerFromQuickAction("flights"));
-  quickLayerHealthBtn?.addEventListener("click", () => {
-    if (typeof window.runSystemHealthChecksNow === "function") {
-      window.runSystemHealthChecksNow();
-      showToast("Refreshing service health checks", "info");
-    }
-  });
 
   const layerLoadouts = {
     transport: {
@@ -8177,6 +8342,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   (function initDisclosureAccordion() {
     const groups = document.querySelectorAll(".cp-tab-pane");
     groups.forEach((pane) => {
+      // Layers should allow multiple sections open simultaneously.
+      if (pane.id === "tab-layers") return;
       const disclosures = pane.querySelectorAll("details.panel-disclosure");
       disclosures.forEach((d) => {
         d.addEventListener("toggle", () => {

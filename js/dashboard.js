@@ -329,6 +329,10 @@
     setKPI("kpi-searches", searches);
     setKPI("kpi-alerts", alerts);
 
+    // Only style the Alerts card red when there are actual alerts
+    const alertCard = document.getElementById("kpi-card-alerts");
+    if (alertCard) alertCard.classList.toggle("kpi-card-alert", alerts > 0);
+
     // Session duration
     const elapsed = Date.now() - _sessionStart;
     const mins = Math.floor(elapsed / 60000);
@@ -546,6 +550,16 @@
     setInterval(updateKPIs, 10000);
 
     logActivity("Session started", `Control Room v2 initialized`, "general");
+
+    // Auto-open the Activity Log so users know it exists; they can dismiss with ×
+    setTimeout(() => toggleBottomPanel("activity"), 900);
+
+    // Briefly show right-click discovery hint in the status bar
+    setTimeout(() => {
+      if (typeof setStatus === "function") {
+        setStatus("Tip: right-click the map for quick actions  ·  Ctrl+K for command palette  ·  F1 for all shortcuts");
+      }
+    }, 2500);
   }
 
   // Wait for DOM
